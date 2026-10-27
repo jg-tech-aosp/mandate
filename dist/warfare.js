@@ -14,14 +14,28 @@ let wcMicroCells=null;
 function wcMicrostates(){if(wcMicroCells)return wcMicroCells;wcMicroCells=new Map();for(let c of ['VA','MC','SM','LI','AD']){if(!world[c])continue;let key=wcKey(...world[c].center),near=[key,...wcNeighbors(key)];if(!near.some(k=>wcContains(wcPoint(k),c)))wcMicroCells.set(key,c);}return wcMicroCells;}
 function wcLegal(key,w){let micro=wcMicrostates().get(key);if(micro)return micro;if(wcLegalCache.has(key))return wcLegalCache.get(key);let p=wcPoint(key),c=Object.keys(world).find(c=>wcContains(p,c))||null;wcLegalCache.set(key,c);return c;}
 function wcRoot(c){if(!state)return c;let seen=new Set();while(c&&state.countries[c]?.owner!==c&&!seen.has(c)){seen.add(c);c=state.countries[c]?.owner;}return c;}
-function wcBase(key,w){let geographic=wcLegal(key,w),c=state.titles?.[key]||geographic;if(!c)return null;let owner=wcRoot(c);if(owner!==c)return owner;if(c==='UA'&&state.mode==='control'&&occupationData&&inside(wcPoint(key),occupationData))return'RU';return c;}
+function wcBase(key,w){
+ let geographic=wcLegal(key,w),title=state.titles?.[key],c=title||geographic;if(!c)return null;
+ if(!title&&state.countries[geographic]?.exile?.occupier)return wcRoot(state.countries[geographic].exile.occupier);
+ let owner=wcRoot(c);if(owner!==c)return owner;
+ if(c==='UA'&&state.mode==='control'&&occupationData&&inside(wcPoint(key),occupationData))return'RU';return c;
+}
 function wcOwner(key,w){return wcRoot(state.control?.[key]||wcBase(key,w));}
 function wcSetOwner(key,c,w){if(c===wcBase(key,w))delete state.control[key];else state.control[key]=c;}
 function wcFind(a,b,includePeace=false){return state.wars.find(w=>w.shared&&[w.a,w.b].includes(a)&&[w.a,w.b].includes(b)&&a!==b&&(includePeace||w.active));}
 function wcUkraine(){return state.wars.find(w=>w.shared&&w.scenario);}
 function wcOpposing(key,w){let owner=wcOwner(key,w);return [w.a,w.b].includes(owner)&&wcNeighbors(key).some(k=>[w.a,w.b].includes(wcOwner(k,w))&&wcOwner(k,w)!==owner);}
 function wcBoundaryKeys(feature,other){let keys=new Set();let bounds=other?wcBounds(rings(other).flatMap(p=>p[0])):null;for(let poly of rings(feature))for(let ring of poly){for(let i=1;i<ring.length;i++){let a=ring[i-1],b=ring[i];if(bounds&&!wcInBounds(a,bounds,.15)&&!wcInBounds(b,bounds,.15))continue;let n=Math.max(1,Math.ceil(Math.max(Math.abs(b[0]-a[0])/WC_WIDTH,Math.abs(b[1]-a[1])/WC_HEIGHT)*2));for(let j=0;j<=n;j++)keys.add(wcKey(a[0]+(b[0]-a[0])*j/n,a[1]+(b[1]-a[1])*j/n));}}return keys;}
-function wcSeed(w){let keys=wcBoundaryKeys(world[w.a].feature,world[w.b].feature);if(w.scenario)for(let k of wcBoundaryKeys(occupationData))keys.add(k);for(let k of new Set([...Object.keys(state.control),...Object.keys(state.titles||{})]))if([w.a,w.b].includes(wcOwner(k,w)))keys.add(k);let band=new Set(keys);for(let k of keys)for(let n of wcNeighbors(k))band.add(n);w.frontier=[...band].filter(k=>wcOpposing(k,w));if(!w.frontier.length&&!w.scenario)wcLanding(w);}
+function wcSeed(w){
+ if(w.liberation){
+  let country=w.exileCountry||w.a,capital=wcCities().find(city=>city.home===country&&city.capital);
+  if(capital){let seen=new Set([capital.key]),frontier=[capital.key];for(let depth=0;depth<2;depth++){let nextFrontier=[];for(let key of frontier)for(let next of wcNeighbors(key))if(!seen.has(next)&&wcLegal(next,w)===country){seen.add(next);nextFrontier.push(next);}frontier=nextFrontier;}
+   for(let key of seen)if(wcLegal(key,w)===country)state.control[key]=country;
+  }
+ }
+ let keys=wcBoundaryKeys(world[w.a].feature,world[w.b].feature);if(w.scenario)for(let k of wcBoundaryKeys(occupationData))keys.add(k);for(let k of new Set([...Object.keys(state.control),...Object.keys(state.titles||{})]))if([w.a,w.b].includes(wcOwner(k,w)))keys.add(k);
+ let band=new Set(keys);for(let k of keys)for(let n of wcNeighbors(k))band.add(n);w.frontier=[...band].filter(k=>wcOpposing(k,w));if(!w.frontier.length&&!w.scenario)wcLanding(w);
+}
 function wcLanding(w){
  // One supplied beachhead when there is no land contact; no mirrored overseas invasion.
  let own=rings(world[w.a].feature).flatMap(p=>p[0]),enemy=rings(world[w.b].feature).flatMap(p=>p[0]),best=null;
@@ -97,10 +111,21 @@ function wcAdvanceWar(w){
  for(let c of [w.a,w.b]){let n=state.countries[c],off=w.postures[c]==='offensive';n.force=Math.max(.5,n.force*(off?.994:.997));n.ready=clamp(n.ready-(off?1.1:.5),20,100);w.fatigue[c]=clamp(w.fatigue[c]+(off?.65:.35),0,100);n.morale=clamp(n.morale-(off?.18:.08),0,100);}
  wcCityChanges(w,beforeCities);w.months++;w.support*=.94;
  if(w.last.cells)log(`${name(w.last.winner)} advanced ${w.last.cells} small sectors on the ${name(w.a)}–${name(w.b)} front${w.months<=3&&!w.scenario?' during the opening phase':''}.`,true);else if(state.turn%3===0)log(`The ${name(w.a)}–${name(w.b)} front held this month.`,true);
- wcCapitulation(w);
+ if(w.revoltId)resResolveRevolt(w);else if(w.liberation)resResolveExileWar(w);else wcCapitulation(w);
 }
-function wcCapitulation(w){for(let c of [w.a,w.b]){let capital=wcCities().find(city=>city.home===c&&city.capital),other=c===w.a?w.b:w.a;if(!capital)continue;w.capitalHolds[c]=wcCityOwner(capital)===other?(w.capitalHolds[c]||0)+1:0;
- if(w.months>=4&&w.capitalHolds[c]>=3&&(state.countries[c].morale<35||strength(c)<strength(other)*.1)){state.countries[c].owner=other;for(let conflict of state.wars)if([conflict.a,conflict.b].includes(c))conflict.active=false;log(`${name(c)} capitulated after losing its capital and military cohesion.`,true);if(c===state.player){state.ended=true;clearInterval(timer);timer=null;info('Government displaced','<p>Your capital has fallen and your government has capitulated.</p>');}}}}
+function wcCapitulation(w){
+ if(w.revoltId||w.liberation)return;
+ for(let c of [w.a,w.b]){
+  let capital=wcCities().find(city=>city.home===c&&city.capital),other=c===w.a?w.b:w.a;if(!capital)continue;
+  w.capitalHolds[c]=wcCityOwner(capital)===other?(w.capitalHolds[c]||0)+1:0;
+  if(w.months>=4&&w.capitalHolds[c]>=3&&(state.countries[c].morale<35||strength(c)<strength(other)*.1)){
+   state.countries[c].owner=other;for(let conflict of state.wars)if([conflict.a,conflict.b].includes(c))conflict.active=false;
+   if(typeof resOnAnnexation==='function')resOnAnnexation(c,other);
+   log(`${name(c)} capitulated after losing its capital and military cohesion.`,true);
+   if(c===state.player){state.ended=false;clearInterval(timer);timer=null;info('Government in exile','<p>Your state survives. The government can organize abroad and launch a liberation campaign from the Society tab.</p>');}
+  }
+ }
+}
 function wcAdvanceAll(){for(let c in state.countries){let n=state.countries[c],approval=c===state.player?state.approval:n.ai?.approval??58;n.morale=clamp(n.morale+(65-n.morale)*.025+(approval-50)*.002,0,100);}for(let w of state.wars)wcAdvanceWar(w);if(wcLegalCache.size>180000)wcLegalCache.clear();}
 function wcHexPath(key){let p=wcPoint(key);for(let k=0;k<6;k++){let a=(60*k+30)*Math.PI/180,q=screen(p[0]+WC_RADIUS*1.5*Math.cos(a),p[1]+WC_RADIUS*Math.sin(a));k?ctx.lineTo(...q):ctx.moveTo(...q);}ctx.closePath();}
 // Cached geometry is derived from the very same controller cells used by combat.
@@ -169,9 +194,12 @@ function wcDraw(){
 }
 let wcAreaCache=new Map();
 function wcCountryArea(code){if(wcAreaCache.has(code))return wcAreaCache.get(code);let area=0,rad=Math.PI/180;for(let loop of wcCountryLoops(code))for(let i=0,j=loop.length-1;i<loop.length;j=i++)area+=(loop[i][0]-loop[j][0])*rad*(Math.sin(loop[i][1]*rad)+Math.sin(loop[j][1]*rad));area=Math.abs(area);wcAreaCache.set(code,area);return area;}
-function wcTerritoryStats(w){let lost={[w.a]:0,[w.b]:0},keys=new Set([...Object.keys(state.control),...Object.keys(state.titles||{})]);if(w.scenario&&state.mode==='control')for(let key of wcScenarioGrid().keys)keys.add(key);let rad=Math.PI/180;
+function wcTerritoryStats(w){
+ let lost={[w.a]:0,[w.b]:0},keys=new Set([...Object.keys(state.control),...Object.keys(state.titles||{})]);if(w.scenario&&state.mode==='control')for(let key of wcScenarioGrid().keys)keys.add(key);let rad=Math.PI/180;
  for(let key of keys){let legal=wcLegal(key),owner=wcOwner(key);if(legal===w.a&&owner===w.b||legal===w.b&&owner===w.a)lost[legal]+=2*WC_WIDTH*WC_HEIGHT*rad*rad*Math.cos(wcPoint(key)[1]*rad);}
- let percent={};for(let c of [w.a,w.b]){let other=c===w.a?w.b:w.a;percent[c]=wcRoot(c)===other?100:clamp(100*lost[c]/Math.max(1e-12,wcCountryArea(c)),0,100);}return{aHoldsB:percent[w.b],bHoldsA:percent[w.a]};}
+ let percent={};for(let c of [w.a,w.b]){let other=c===w.a?w.b:w.a;percent[c]=state.countries[c]?.exile?.occupier===other?100*(1-resLiberationShare(c)):wcRoot(c)===other?100:clamp(100*lost[c]/Math.max(1e-12,wcCountryArea(c)),0,100);}
+ return{aHoldsB:percent[w.b],bHoldsA:percent[w.a]};
+}
 function wcPercent(value){return value>0&&value<.01?'<0.01%':value.toFixed(value<1?2:1)+'%';}
 function wcTerritorySummary(w){let t=wcTerritoryStats(w),mine=[w.a,w.b].includes(state.player),rows=[];if(mine){let other=state.player===w.a?w.b:w.a;rows=[['Taken from '+name(other),state.player===w.a?t.aHoldsB:t.bHoldsA],['Lost to '+name(other),state.player===w.a?t.bHoldsA:t.aHoldsB]];}else rows=[[name(w.b)+' held by '+name(w.a),t.aHoldsB],[name(w.a)+' held by '+name(w.b),t.bHoldsA]];return rows.map(([label,value])=>'<div class="row"><small>'+label+'</small><b>'+wcPercent(value)+'</b></div>').join('')+'<p class="note">Net current control, relative to each country’s original area. Recaptures reduce these totals.</p>';}
 
