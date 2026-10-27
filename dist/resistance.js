@@ -85,7 +85,7 @@ function resClearGenerated(){
  for(let actor of resAddedActors)delete world[actor];
  for(let i=RES_GROUPS.length-1;i>=0;i--)if(RES_GROUPS[i].dynamic)RES_GROUPS.splice(i,1);
  resAddedActors.clear();resAddedFeatures.clear();resDynamicGroupIds.clear();resIndependentSourceOwners.clear();resOriginByCell.clear();resOriginByFeature.clear();resCellCache.clear();
- if(typeof wcLegalCache!=='undefined')wcLegalCache.clear();if(typeof ptInvalidateBorders==='function')ptInvalidateBorders();
+ if(typeof wcLegalCache!=='undefined')wcLegalCache.clear();if(state&&typeof ptInvalidateBorders==='function')ptInvalidateBorders();
 }
 
 function resEnsure(){
