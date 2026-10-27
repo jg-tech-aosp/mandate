@@ -2,7 +2,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const els={};const el=s=>els[s]??={value:s==='#country'?'LV':'',dataset:{mode:'legal'},classList:{toggle(){}},style:{},addEventListener(){},showModal(){},close(){},getContext(){return{}},getBoundingClientRect(){return{width:800,height:700}}};
 const storage={};const sandbox={console,document:{querySelector:el,querySelectorAll:()=>[],addEventListener(){}},localStorage:{setItem:(k,v)=>storage[k]=v,getItem:k=>storage[k]},setTimeout(){},clearTimeout(){},setInterval(){},clearInterval(){},Math,Date};
 vm.createContext(sandbox);
-for(let file of ['simulation.js','warfare.js','treaties.js'])vm.runInContext(fs.readFileSync('dist/'+file,'utf8'),sandbox);
+for(let file of ['simulation.js','politics.js','warfare.js','treaties.js'])vm.runInContext(fs.readFileSync('dist/'+file,'utf8'),sandbox);
 vm.runInContext(fs.readFileSync('dist/game.js','utf8').split("window.addEventListener('resize'")[0],sandbox);
 const manifest=JSON.parse(fs.readFileSync('dist/places.json'));const settlements=manifest.parts.flatMap(p=>JSON.parse(fs.readFileSync('dist/'+p)));assert.equal(settlements.length,manifest.count);
 Object.assign(sandbox,{data:JSON.parse(fs.readFileSync('dist/countries.json')),occupation:JSON.parse(fs.readFileSync('dist/occupation.json')),settlements,assert});
@@ -69,3 +69,5 @@ console.log('PASS: relative city morale thresholds and Estonian cities; all coun
 `,sandbox);
 
 if(process.env.EXPORT_BORDERS){let grid=vm.runInContext(`({radius:WC_RADIUS,countries:Object.fromEntries(Object.keys(world).map(c=>[c,wcCountryLoops(c).map(loop=>{let points=loop.map(p=>[Math.round(p[0]/(WC_WIDTH/2)),Math.round(p[1]/(WC_RADIUS/2))]);let steps=points.map((p,i)=>{let next=points[(i+1)%points.length],code=WC_CORNERS.findIndex(d=>d[0]===next[0]-p[0]&&d[1]===next[1]-p[1]);if(code<0)throw Error('Invalid grid edge');return code;}).join('');return [...points[0],steps];})]))})`,sandbox);fs.writeFileSync('dist/borders-grid.json',JSON.stringify(grid));console.log('Exported compact country grid outlines');}
+
+

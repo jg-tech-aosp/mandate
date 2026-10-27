@@ -17,6 +17,8 @@ Open http://localhost:8000. Settlement data is split into JSON parts listed in `
 
 `dist/simulation.js` implements seeded monthly AI decisions; `dist/warfare.js` implements shared territorial control. Country profiles have distinct economic, welfare, security, neutrality or influence priorities; these are illustrative game personalities. Non-player governments respond to budget pressure and public events, invest, recruit, improve relations, sign trade agreements and defence pacts, send Ukraine aid, and undergo modeled elections. They can send the player proposals for acceptance in Cabinet. Highly aggressive AI may initiate a campaign against a sufficiently weak, hostile rival; it checks coalition strength first. The player retains control of their own domestic policy. Inspect any country to see its agenda and latest decision.
 
+Political power is earned monthly from approval: 1 point at 60–79%, 2 at 80–89%, and 3 at 90% or more. Points reset at each actual election, including elections delayed by a longer term. AI governments use the same system. Severity sets the cost at 20 points per level and scales approval and legitimacy changes. The Cabinet offers shorter or longer election intervals, three media-consolidation levels, and Supreme Rule. Media control slightly improves monthly approval, softens negative event impacts, and boosts the modeled election score; Supreme Rule also boosts the election score. Reversals cost the same points and invert the original approval and legitimacy changes.
+
 In the 2026 control scenario, the Ukraine front runs even if the player chooses another country. Russia and Ukraine can select their posture in Forces. Save files from the previous static scenario are migrated; existing Russian gains from old Ukrainian campaigns are folded into control. Legacy paired invasions are consolidated by the warfare-v3 migration described below. Countries and economic statistics remain simplified.
 
 ## Shared fronts and morale (warfare v3)
@@ -50,3 +52,5 @@ City importance is relative to its home-country population. Using the current il
 Forces conflict cards display both sides’ current territorial gains/losses as percentages of the opponent’s original country area. Area is latitude-weighted so northern hexes are not counted as equally large physical areas. Starting Russian occupation, captured sectors, treaty cessions and capitulation are included; recaptures reduce the net total. Ceasefire cards retain the percentages. These are net current-control metrics, not cumulative capture counts.
 
 Treaty cessions now update sovereign country fills, border outlines, selection highlights and map picking. Obsolete shared-border segments are removed and new hex edges are traced, including ceded enclaves and holes. Occupation clipping retains the fixed geographic grid. Borders rebuild from saved territorial titles on load; earlier treaties do not need to be signed again.
+
+
