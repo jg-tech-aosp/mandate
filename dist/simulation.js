@@ -73,7 +73,7 @@ function simDecision(c){
  if(simSpend(n,n.gdp*.002)){n.gdp*=1.0015;ai.approval=clamp(ai.approval+1,0,100);simRecord(c,'Approved an infrastructure investment programme.');}else simRecord(c,'Prioritized reserve recovery and deferred new spending.');
 }
 function simAIWar(c){let n=state.countries[c],ai=n.ai;if(ai.risk<.8||state.turn<9||simAtWar(c)||state.wars.filter(w=>w.active).length>=2)return;
- for(let b of ai.rivals){if(!world[b]||allied(c,b)||state.countries[b].owner!==b||simFrontPair(c,b)||simRelation(c,b)>-65)continue;
+ for(let b of ai.rivals){if(ptTruce(c,b)||state.countries[c].overlord||!world[b]||allied(c,b)||state.countries[b].owner!==b||simFrontPair(c,b)||simRelation(c,b)>-65)continue;
  if(strength(c)>(strength(b)+coalition(b,c))*2.3&&simRandom()<.03){state.wars.push(wcCreateWar(c,b));simSetRelation(c,b,-100);simRecord(c,`Opened a military campaign against ${name(b)}.`,true);return;}}
 }
 function simRunAI(){

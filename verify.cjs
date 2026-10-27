@@ -2,7 +2,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const els={};const el=s=>els[s]??={value:s==='#country'?'LV':'',dataset:{mode:'legal'},classList:{toggle(){}},style:{},addEventListener(){},showModal(){},close(){},getContext(){return{}},getBoundingClientRect(){return{width:800,height:700}}};
 const storage={};const sandbox={console,document:{querySelector:el,querySelectorAll:()=>[],addEventListener(){}},localStorage:{setItem:(k,v)=>storage[k]=v,getItem:k=>storage[k]},setTimeout(){},clearTimeout(){},setInterval(){},clearInterval(){},Math,Date};
 vm.createContext(sandbox);
-for(let file of ['simulation.js','warfare.js'])vm.runInContext(fs.readFileSync('dist/'+file,'utf8'),sandbox);
+for(let file of ['simulation.js','warfare.js','treaties.js'])vm.runInContext(fs.readFileSync('dist/'+file,'utf8'),sandbox);
 vm.runInContext(fs.readFileSync('dist/game.js','utf8').split("window.addEventListener('resize'")[0],sandbox);
 const manifest=JSON.parse(fs.readFileSync('dist/places.json'));const settlements=manifest.parts.flatMap(p=>JSON.parse(fs.readFileSync('dist/'+p)));assert.equal(settlements.length,manifest.count);
 Object.assign(sandbox,{data:JSON.parse(fs.readFileSync('dist/countries.json')),occupation:JSON.parse(fs.readFileSync('dist/occupation.json')),settlements,assert});

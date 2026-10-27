@@ -14,7 +14,7 @@ let wcMicroCells=null;
 function wcMicrostates(){if(wcMicroCells)return wcMicroCells;wcMicroCells=new Map();for(let c of ['VA','MC','SM','LI','AD']){if(!world[c])continue;let key=wcKey(...world[c].center),near=[key,...wcNeighbors(key)];if(!near.some(k=>wcContains(wcPoint(k),c)))wcMicroCells.set(key,c);}return wcMicroCells;}
 function wcLegal(key,w){let micro=wcMicrostates().get(key);if(micro)return micro;if(wcLegalCache.has(key))return wcLegalCache.get(key);let p=wcPoint(key),c=Object.keys(world).find(c=>wcContains(p,c))||null;wcLegalCache.set(key,c);return c;}
 function wcRoot(c){if(!state)return c;let seen=new Set();while(c&&state.countries[c]?.owner!==c&&!seen.has(c)){seen.add(c);c=state.countries[c]?.owner;}return c;}
-function wcBase(key,w){let c=wcLegal(key,w);if(!c)return null;let owner=wcRoot(c);if(owner!==c)return owner;if(c==='UA'&&state.mode==='control'&&occupationData&&inside(wcPoint(key),occupationData))return'RU';return c;}
+function wcBase(key,w){let geographic=wcLegal(key,w),c=state.titles?.[key]||geographic;if(!c)return null;let owner=wcRoot(c);if(owner!==c)return owner;if(c==='UA'&&state.mode==='control'&&occupationData&&inside(wcPoint(key),occupationData))return'RU';return c;}
 function wcOwner(key,w){return wcRoot(state.control?.[key]||wcBase(key,w));}
 function wcSetOwner(key,c,w){if(c===wcBase(key,w))delete state.control[key];else state.control[key]=c;}
 function wcFind(a,b,includePeace=false){return state.wars.find(w=>w.shared&&[w.a,w.b].includes(a)&&[w.a,w.b].includes(b)&&a!==b&&(includePeace||w.active));}
@@ -38,7 +38,7 @@ function wcCreateWar(a,b,options={}){
 function wcLegacyHex(p,radius){return Array.from({length:6},(_,k)=>{let a=(60*k+30)*Math.PI/180;return[p[0]+radius*1.5*Math.cos(a),p[1]+radius*Math.sin(a)];});}
 function wcImportOldFront(old){if(!old?.owners)return;let g=simGrid();for(let i=0;i<old.owners.length;i++){if(old.owners[i]===g.initial[i]||!g.cells[i])continue;let p=g.cells[i],poly=wcLegacyHex(p,g.radius),minRow=Math.floor((p[1]-g.radius)/WC_HEIGHT),maxRow=Math.ceil((p[1]+g.radius)/WC_HEIGHT);for(let r=minRow;r<=maxRow;r++){let q0=Math.floor((p[0]-g.radius*1.5)/WC_WIDTH-r/2),q1=Math.ceil((p[0]+g.radius*1.5)/WC_WIDTH-r/2);for(let q=q0;q<=q1;q++){let key=q+','+r,point=wcPoint(key);if(insideRing(point,poly)&&wcLegal(key)==='UA')wcSetOwner(key,old.owners[i]?'RU':'UA');}}}}
 function wcEnsureWorld(){
- state.control??={};for(let c in state.countries)state.countries[c].morale??=65;
+ state.control??={};ptEnsure();for(let c in state.countries)state.countries[c].morale??=65;
  if(state.warfare!==3){let old=state.front,oldWars=state.wars||[],pairs=new Set();state.wars=[];
   if(state.mode==='control'){
    wcImportOldFront(old);let w=wcCreateWar('RU','UA',{scenario:true,months:old?.months??56,active:old?.active??true,snapshot:occupationData.properties.snapshot_date,support:old?.support||0});
@@ -57,7 +57,7 @@ function wcEnsureWorld(){
  wcCities();
 }
 function wcCities(){if(!wcCityCache){wcCityCache=places.filter(p=>p[5]||p[3]>=100000).map(p=>({id:p[4]+':'+p[0]+':'+p[1],name:p[0],home:p[4],population:p[3],capital:p[5],key:wcKey(p[1],p[2]),point:[p[1],p[2]]}));}return wcCityCache;}
-function wcCityOwner(city){if(state.control[city.key])return wcRoot(state.control[city.key]);let c=wcRoot(city.home);if(c==='UA'&&state.mode==='control'&&inside(wcPoint(city.key),occupationData))return'RU';return c;}
+function wcCityOwner(city){if(state.titles?.[city.key])return wcOwner(city.key);if(state.control[city.key])return wcRoot(state.control[city.key]);let c=wcRoot(city.home);if(c==='UA'&&state.mode==='control'&&inside(wcPoint(city.key),occupationData))return'RU';return c;}
 function wcOpening(w,c){return !w.scenario&&w.initiator===c&&w.months<3?1.25:1;}
 function wcPower(w,c){let n=state.countries[c],other=c===w.a?w.b:w.a,stance=w.postures[c],approval=c===state.player?state.approval:n.ai?.approval??58;
  let base=strength(c)+(c===w.b?coalition(c,other):0),morale=.6+n.morale/100*.8,fatigue=clamp(1-w.fatigue[c]*.003,.55,1),politics=.85+approval/400,solvency=clamp(1-Math.max(0,n.debt/n.gdp-1)*.08,.65,1);
@@ -161,8 +161,8 @@ function wcDrawScenario(){
 }
 function wcDraw(){
  wcDrawScenario();
- let groups={};for(let key in state.control){let legal=wcLegal(key);if(!legal||state.control[key]===wcBase(key))continue;let p=screen(...wcPoint(key));if(p[0]<-15||p[0]>W+15||p[1]<-15||p[1]>H+15)continue;(groups[legal]??=[]).push(key);}
- for(let c in groups){ctx.save();path(world[c].feature);ctx.clip('evenodd');let owners={};for(let key of groups[c])(owners[wcOwner(key)]??=[]).push(key);for(let owner in owners){ctx.fillStyle=wcTerritoryColor(c,owner);ctx.beginPath();for(let key of owners[owner])wcHexPath(key);ctx.fill();}ctx.restore();}
+ let groups={};for(let key of new Set([...Object.keys(state.control),...Object.keys(state.titles||{})])){let legal=wcLegal(key);if(!legal||(!state.titles?.[key]&&state.control[key]===wcBase(key)))continue;let p=screen(...wcPoint(key));if(p[0]<-15||p[0]>W+15||p[1]<-15||p[1]>H+15)continue;(groups[legal]??=[]).push(key);}
+ for(let c in groups){ctx.save();path(world[c].feature);ctx.clip('evenodd');let owners={};for(let key of groups[c])(owners[wcOwner(key)]??=[]).push(key);for(let owner in owners){let sovereignGroups={};for(let key of owners[owner])(sovereignGroups[ptSovereign(key)]??=[]).push(key);for(let sovereign in sovereignGroups){ctx.fillStyle=wcTerritoryColor(sovereign,owner);ctx.beginPath();for(let key of sovereignGroups[sovereign])wcHexPath(key);ctx.fill();}}ctx.restore();}
  ctx.strokeStyle='#f1d1a0';ctx.lineWidth=1.15;ctx.beginPath();for(let w of state.wars){if(!w.active)continue;for(let key of w.frontier){if(wcOwner(key,w)!==w.a)continue;let p=wcPoint(key);for(let [dq,dr] of WC_DIRS){let [q,r]=key.split(',').map(Number),neighbor=(q+dq)+','+(r+dr);if(wcOwner(neighbor,w)!==w.b)continue;let angle=Math.atan2(1.5*dr,Math.sqrt(3)*(dq+dr/2));for(let sign of [-1,1]){let a=angle+sign*Math.PI/6,point=screen(p[0]+WC_RADIUS*1.5*Math.cos(a),p[1]+WC_RADIUS*Math.sin(a));sign===-1?ctx.moveTo(...point):ctx.lineTo(...point);}}}}ctx.stroke();
 }
 function wcCard(w){let mine=[w.a,w.b].includes(state.player),last=w.last;return `<div class="card"><b>${name(w.a)} ↔ ${name(w.b)}</b><p>${w.active?'Active shared front':'Ceasefire'} · ${w.months} ${w.months===1?'month':'months'}</p><p>${last.winner?`${name(last.winner)} advanced ${last.cells} sectors last month.`:'The line of control is holding.'}</p>${!w.scenario&&w.months<3?`<p class="positive">${name(w.initiator)}: +25% opening initiative · ${3-w.months} turns left</p>`:''}<p>Morale: ${name(w.a)} ${Math.round(state.countries[w.a].morale)}% · ${name(w.b)} ${Math.round(state.countries[w.b].morale)}%</p>${mine&&w.active?`<label class="row">Front posture<select aria-label="Campaign posture" data-war-posture="${w.id}">${['balanced','offensive','defensive'].map(p=>`<option ${w.postures[state.player]===p?'selected':''}>${p}</option>`).join('')}</select></label>`:''}<p class="note">Small shared hex sectors. Major cities affect morale on capture and liberation. Ceasefires preserve control.</p></div>`;}

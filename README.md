@@ -31,4 +31,16 @@ Existing v2 Ukraine-front gains and ceasefires migrate to the finer grid. The ol
 
 The dated occupation polygon is sampled by hex centre using the exact `wcBase` controller rule. A cached union outline follows those hex edges, so the initial Russian occupation and combat frontline agree with each other. Coasts remain clipped to the geographic country boundary. New advances, liberated cells and starting occupation use one consistent palette: occupied foreign territory is a darker shade (66% RGB brightness) of the controlling country; recovered home territory returns to its normal country shade. The same treatment applies to legacy occupations and capitulated countries. The legend identifies occupied fill and the frontline. This is a rendering update; saved territorial control and war progress do not reset.
 
-Country fills, outlines, selection highlights, occupation clipping and map picking now use the same hex borders as combat. Borders are traced from a cached boundary band instead of rasterizing entire countries. Microstates smaller than one sector receive a single representative hex so they remain selectable. Ceasefires freeze control; no negotiated recognition or annexation-legitimacy feature is implemented.
+Country fills, outlines, selection highlights, occupation clipping and map picking now use the same hex borders as combat. Borders are traced from a cached boundary band instead of rasterizing entire countries. Microstates smaller than one sector receive a single representative hex so they remain selectable. Ceasefires freeze control; the peace conference can now negotiate cessions and binding truces.
+
+## Peace treaties
+
+After agreeing a ceasefire, select the other country and choose **Negotiate peace treaty** in Foreign Affairs. The conference replaces the diplomacy panel while leaving the main map available. Paint **Demand**, **Offer**, or **Erase** hexes, choose a brush size, use **Pan** to navigate, or select already-occupied opponent sectors. Time pauses during drafting. Gold marks demands, blue marks concessions.
+
+Set a whole-number truce duration from **1 to 50 years**, reparations from -30% to +30% of the payer's GDP, a 1–20-year payment period, and optional vassal status. Positive reparations are paid to you; negative amounts are paid by you. Demands can be rejected based on military leverage, occupation, fatigue, concessions, capitals and the scale of the terms. Rejected drafts remain editable.
+
+Accepted cessions transfer in-game sovereignty and control; ceded sectors use the normal recipient colour instead of occupation shading. Monthly payments use available reserves and missed amounts remain due. Older reparation obligations survive renegotiation; new amounts are additional. Vassals pay monthly tribute at 1% of annual GDP, receive defensive ties, and cannot independently declare war on third countries. They can rebel against their overlord.
+
+A binding truce expires after the chosen number of years. The diplomacy button changes to **Break truce & declare war** while it is in force. Breaking it costs legitimacy and approval, worsens international relations, cancels bilateral reparation schedules, and can cause third countries to impose sanctions and terminate trade. Sanctions reduce the targeted country's growth. AI governments respect their truces.
+
+Treaties, titles, payment balances, vassal relationships, breach records and expiry dates persist in saves. Run `node verify.cjs` for the original simulation checks and `node verify-treaties.cjs` for the focused treaty regression tests.
