@@ -11,7 +11,7 @@ function wcInBounds(p,b,margin=0){return p[0]>=b[0]-margin&&p[0]<=b[2]+margin&&p
 function wcShapes(){if(!wcShapeCache){wcShapeCache={};for(let c in world)wcShapeCache[c]=rings(world[c].feature).map(poly=>({poly,b:wcBounds(poly[0])}));}return wcShapeCache;}
 function wcContains(p,c){return wcShapes()[c]?.some(({poly,b})=>wcInBounds(p,b)&&insideRing(p,poly[0])&&!poly.slice(1).some(r=>insideRing(p,r)));}
 function wcLegal(key,w){if(wcLegalCache.has(key))return wcLegalCache.get(key);let p=wcPoint(key),preferred=w?[w.a,w.b]:[],c=preferred.find(c=>wcContains(p,c))||Object.keys(world).find(c=>!preferred.includes(c)&&wcContains(p,c))||null;wcLegalCache.set(key,c);return c;}
-function wcRoot(c){let seen=new Set();while(c&&state.countries[c]?.owner!==c&&!seen.has(c)){seen.add(c);c=state.countries[c]?.owner;}return c;}
+function wcRoot(c){if(!state)return c;let seen=new Set();while(c&&state.countries[c]?.owner!==c&&!seen.has(c)){seen.add(c);c=state.countries[c]?.owner;}return c;}
 function wcBase(key,w){let c=wcLegal(key,w);if(!c)return null;let owner=wcRoot(c);if(owner!==c)return owner;if(c==='UA'&&state.mode==='control'&&occupationData&&inside(wcPoint(key),occupationData))return'RU';return c;}
 function wcOwner(key,w){return wcRoot(state.control?.[key]||wcBase(key,w));}
 function wcSetOwner(key,c,w){if(c===wcBase(key,w))delete state.control[key];else state.control[key]=c;}
@@ -55,7 +55,7 @@ function wcEnsureWorld(){
  wcCities();
 }
 function wcCities(){if(!wcCityCache){wcCityCache=places.filter(p=>p[5]||p[3]>=100000).map(p=>({id:p[4]+':'+p[0]+':'+p[1],name:p[0],home:p[4],population:p[3],capital:p[5],key:wcKey(p[1],p[2]),point:[p[1],p[2]]}));}return wcCityCache;}
-function wcCityOwner(city){if(state.control[city.key])return wcRoot(state.control[city.key]);let c=wcRoot(city.home);if(c==='UA'&&state.mode==='control'&&inside(city.point,occupationData))return'RU';return c;}
+function wcCityOwner(city){if(state.control[city.key])return wcRoot(state.control[city.key]);let c=wcRoot(city.home);if(c==='UA'&&state.mode==='control'&&inside(wcPoint(city.key),occupationData))return'RU';return c;}
 function wcOpening(w,c){return !w.scenario&&w.initiator===c&&w.months<3?1.25:1;}
 function wcPower(w,c){let n=state.countries[c],other=c===w.a?w.b:w.a,stance=w.postures[c],approval=c===state.player?state.approval:n.ai?.approval??58;
  let base=strength(c)+(c===w.b?coalition(c,other):0),morale=.6+n.morale/100*.8,fatigue=clamp(1-w.fatigue[c]*.003,.55,1),politics=.85+approval/400,solvency=clamp(1-Math.max(0,n.debt/n.gdp-1)*.08,.65,1);
@@ -99,9 +99,47 @@ function wcCapitulation(w){for(let c of [w.a,w.b]){let capital=wcCities().find(c
  if(w.months>=4&&w.capitalHolds[c]>=3&&(state.countries[c].morale<35||strength(c)<strength(other)*.1)){state.countries[c].owner=other;for(let conflict of state.wars)if([conflict.a,conflict.b].includes(c))conflict.active=false;log(`${name(c)} capitulated after losing its capital and military cohesion.`,true);if(c===state.player){state.ended=true;clearInterval(timer);timer=null;info('Government displaced','<p>Your capital has fallen and your government has capitulated.</p>');}}}}
 function wcAdvanceAll(){for(let c in state.countries){let n=state.countries[c],approval=c===state.player?state.approval:n.ai?.approval??58;n.morale=clamp(n.morale+(65-n.morale)*.025+(approval-50)*.002,0,100);}for(let w of state.wars)wcAdvanceWar(w);if(wcLegalCache.size>180000)wcLegalCache.clear();}
 function wcHexPath(key){let p=wcPoint(key);for(let k=0;k<6;k++){let a=(60*k+30)*Math.PI/180,q=screen(p[0]+WC_RADIUS*1.5*Math.cos(a),p[1]+WC_RADIUS*Math.sin(a));k?ctx.lineTo(...q):ctx.moveTo(...q);}ctx.closePath();}
+// Cached geometry is derived from the very same controller cells used by combat.
+let wcScenarioGridCache=null;
+const WC_CORNERS=[[1,1],[0,2],[-1,1],[-1,-1],[0,-2],[1,-1]];
+const WC_EDGES=[[5,0],[2,3],[0,1],[3,4],[4,5],[1,2]];
+function wcGridOutline(keys){
+ let edges=new Map();
+ for(let key of keys){let [q,r]=key.split(',').map(Number);for(let i=0;i<WC_DIRS.length;i++){
+  let [dq,dr]=WC_DIRS[i];if(keys.has((q+dq)+','+(r+dr)))continue;
+  let [start,end]=WC_EDGES[i].map(c=>{let [x,y]=WC_CORNERS[c];return (2*q+r+x)+','+(3*r+y);});edges.set(start,end);
+ }}
+ let loops=[];
+ while(edges.size){let start=edges.keys().next().value,current=start,loop=[];
+  do{let [x,y]=current.split(',').map(Number);loop.push([x*WC_WIDTH/2,y*WC_RADIUS/2]);let next=edges.get(current);edges.delete(current);current=next;}while(current&&current!==start);
+  if(current!==start)throw Error('Occupation grid outline did not close');
+  if(loop.length>=3)loops.push(loop);
+ }
+ return loops;
+}
+function wcScenarioGrid(){
+ if(wcScenarioGridCache)return wcScenarioGridCache;
+ let bounds=wcBounds(rings(occupationData).flatMap(p=>p[0])),keys=new Set();
+ for(let r=Math.floor(bounds[1]/WC_HEIGHT)-1;r<=Math.ceil(bounds[3]/WC_HEIGHT)+1;r++){
+  let minQ=Math.floor(bounds[0]/WC_WIDTH-r/2)-1,maxQ=Math.ceil(bounds[2]/WC_WIDTH-r/2)+1;
+  for(let q=minQ;q<=maxQ;q++){let key=q+','+r,p=wcPoint(key);if(inside(p,occupationData)&&wcLegal(key,{a:'UA',b:'RU'})==='UA')keys.add(key);}
+ }
+ return wcScenarioGridCache={keys,loops:wcGridOutline(keys)};
+}
+function wcOccupationColor(owner){
+ let hex=color(owner).slice(1);return '#'+[0,2,4].map(i=>Math.round(parseInt(hex.slice(i,i+2),16)*.66).toString(16).padStart(2,'0')).join('');
+}
+function wcTerritoryColor(legal,owner){return owner===legal?color(legal):wcOccupationColor(owner);}
+function wcDrawScenario(){
+ if(state.mode!=='control'||wcRoot('UA')!=='UA')return;
+ let region=wcScenarioGrid();ctx.save();path(world.UA.feature);ctx.clip('evenodd');ctx.fillStyle=wcOccupationColor('RU');ctx.beginPath();
+ for(let loop of region.loops){loop.forEach((p,i)=>{let point=screen(...p);i?ctx.lineTo(...point):ctx.moveTo(...point);});ctx.closePath();}
+ ctx.fill('evenodd');ctx.restore();
+}
 function wcDraw(){
+ wcDrawScenario();
  let groups={};for(let key in state.control){let legal=wcLegal(key);if(!legal||state.control[key]===wcBase(key))continue;let p=screen(...wcPoint(key));if(p[0]<-15||p[0]>W+15||p[1]<-15||p[1]>H+15)continue;(groups[legal]??=[]).push(key);}
- for(let c in groups){ctx.save();path(world[c].feature);ctx.clip('evenodd');let owners={};for(let key of groups[c])(owners[wcOwner(key)]??=[]).push(key);for(let owner in owners){ctx.fillStyle=owner===state.player?'#d7e99b':color(owner);ctx.beginPath();for(let key of owners[owner])wcHexPath(key);ctx.fill();}ctx.restore();}
+ for(let c in groups){ctx.save();path(world[c].feature);ctx.clip('evenodd');let owners={};for(let key of groups[c])(owners[wcOwner(key)]??=[]).push(key);for(let owner in owners){ctx.fillStyle=wcTerritoryColor(c,owner);ctx.beginPath();for(let key of owners[owner])wcHexPath(key);ctx.fill();}ctx.restore();}
  ctx.strokeStyle='#f1d1a0';ctx.lineWidth=1.15;ctx.beginPath();for(let w of state.wars){if(!w.active)continue;for(let key of w.frontier){if(wcOwner(key,w)!==w.a)continue;let p=wcPoint(key);for(let [dq,dr] of WC_DIRS){let [q,r]=key.split(',').map(Number),neighbor=(q+dq)+','+(r+dr);if(wcOwner(neighbor,w)!==w.b)continue;let angle=Math.atan2(1.5*dr,Math.sqrt(3)*(dq+dr/2));for(let sign of [-1,1]){let a=angle+sign*Math.PI/6,point=screen(p[0]+WC_RADIUS*1.5*Math.cos(a),p[1]+WC_RADIUS*Math.sin(a));sign===-1?ctx.moveTo(...point):ctx.lineTo(...point);}}}}ctx.stroke();
 }
 function wcCard(w){let mine=[w.a,w.b].includes(state.player),last=w.last;return `<div class="card"><b>${name(w.a)} ↔ ${name(w.b)}</b><p>${w.active?'Active shared front':'Ceasefire'} · ${w.months} ${w.months===1?'month':'months'}</p><p>${last.winner?`${name(last.winner)} advanced ${last.cells} sectors last month.`:'The line of control is holding.'}</p>${!w.scenario&&w.months<3?`<p class="positive">${name(w.initiator)}: +25% opening initiative · ${3-w.months} turns left</p>`:''}<p>Morale: ${name(w.a)} ${Math.round(state.countries[w.a].morale)}% · ${name(w.b)} ${Math.round(state.countries[w.b].morale)}%</p>${mine&&w.active?`<label class="row">Front posture<select aria-label="Campaign posture" data-war-posture="${w.id}">${['balanced','offensive','defensive'].map(p=>`<option ${w.postures[state.player]===p?'selected':''}>${p}</option>`).join('')}</select></label>`:''}<p class="note">Small shared hex sectors. Major cities affect morale on capture and liberation. Ceasefires preserve control.</p></div>`;}
