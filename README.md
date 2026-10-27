@@ -46,3 +46,5 @@ A binding truce expires after the chosen number of years. The diplomacy button c
 Treaties, titles, payment balances, vassal relationships, breach records and expiry dates persist in saves. Run `node verify.cjs` for the original simulation checks and `node verify-treaties.cjs` for the focused treaty regression tests.
 
 City importance is relative to its home-country population. Using the current illustrative populations and settlement dataset, Tartu gives +/−7, Pärnu +/−4 and Viljandi +/−2 morale; Tallinn remains +/−10 as the capital. The six-month recapture cooldown remains in effect.
+
+Forces conflict cards display both sides’ current territorial gains/losses as percentages of the opponent’s original country area. Area is latitude-weighted so northern hexes are not counted as equally large physical areas. Starting Russian occupation, captured sectors, treaty cessions and capitulation are included; recaptures reduce the net total. Ceasefire cards retain the percentages. These are net current-control metrics, not cumulative capture counts.
