@@ -35,6 +35,7 @@ function simGrid(){
 function simEnsureWorld(){
  state.rng??=0x4d414e44;state.offers??=[];
  for(let c in state.countries){let n=state.countries[c];n.ai??={...simPersonality(c),approval:58,election:state.turn+48,term:1,lastAction:'Government agenda established.',lastTurn:-10,decisions:0,history:[]};}
+ polEnsure();
  wcEnsureWorld();
 }
 function simDrawFront(){} // Rendering is unified in wcDraw().
@@ -47,7 +48,7 @@ function simSpend(n,amount){if(n.treasury<amount)return false;n.treasury-=amount
 function simOffer(c,type){if(state.offers.some(o=>o.from===c&&o.type===type))return;state.offers.push({from:c,type,expires:state.turn+6});simRecord(c,`Proposed a ${type==='trade'?'trade agreement':'defence pact'} to your government.`,true);}
 function simAcceptOffer(c){let o=state.offers.find(o=>o.from===c),n=nation(),other=state.countries[c];if(!o)return;if(simAtWar(c,state.player)){notify('An agreement cannot be signed while at war.');return;}let key=o.type==='trade'?'trades':'allies';if(!n[key].includes(c))n[key].push(c);if(!other[key].includes(state.player))other[key].push(state.player);simSetRelation(c,state.player,simRelation(c,state.player)+5);state.offers=state.offers.filter(x=>x!==o);log(`Your government accepted the ${o.type} proposal from ${name(c)}.`);}
 function simOffersHTML(){return (state.offers||[]).map(o=>`<div class="card"><b>${name(o.from)} proposes ${o.type==='trade'?'trade':'a defence pact'}</b><p>Offer expires in ${o.expires-state.turn} months.</p>${actionButton('acceptOffer_'+o.from,'Accept proposal')}${actionButton('dismissOffer_'+o.from,'Decline')}</div>`).join('');}
-function simInspector(c){let ai=state.countries[c]?.ai;if(!ai)return '';return `<div class="card"><b>${ai.agenda}</b><p>${c===state.player?'Your country profile':`Government support: ${Math.round(ai.approval)}% · Term ${ai.term}`}</p><p><b>Latest decision:</b> ${ai.lastAction}</p>${c===state.player?'':`<p class="note">Modeled election in ${Math.max(0,ai.election-state.turn)} months. Strategic profile is an illustrative game personality.</p>`}</div>`;}
+function simInspector(c){let ai=state.countries[c]?.ai;if(!ai)return '';return `<div class="card"><b>${ai.agenda}</b><p>${c===state.player?'Your country profile':`Government support: ${Math.round(ai.approval)}% · Legitimacy ${Math.round(ai.legitimacy)}% · PP ${ai.politicalPower} · Term ${ai.term}`}</p><p><b>Latest decision:</b> ${ai.lastAction}</p>${c===state.player?'':`<p class="note">Modeled election in ${Math.max(0,ai.election-state.turn)} months. Strategic profile is an illustrative game personality.</p>`}</div>`;}
 function simDiplomacy(c){
  let n=state.countries[c],ai=n.ai;
  let candidates=Object.keys(state.countries).filter(b=>b!==c&&state.countries[b].owner===b&&!simAtWar(c,b)&&simRelation(c,b)>=35).map(b=>({b,score:simRelation(c,b)+(EU.includes(c)&&EU.includes(b)?12:0)+simRandom()*25})).sort((a,b)=>b.score-a.score);
@@ -79,14 +80,17 @@ function simAIWar(c){let n=state.countries[c],ai=n.ai;if(ai.risk<.8||state.turn<
 function simRunAI(){
  state.offers=state.offers.filter(o=>o.expires>state.turn);
  for(let c in state.countries){if(c===state.player)continue;let n=state.countries[c],ai=n.ai;if(n.owner!==c)continue;
-  ai.approval=clamp(ai.approval+.15+n.growth*.1+(n.health-6)*.1-(n.tax-32)*.05-(simAtWar(c)?.35:0),0,100);
+  ai.approval=clamp(ai.approval+.15+n.growth*.1+(n.health-6)*.1-(n.tax-32)*.05-(simAtWar(c)?.35:0)+ai.politics.mediaLevel*POLITICS_MEDIA_DRIFT,0,100);
   let phase=(c.charCodeAt(0)+c.charCodeAt(1));
-  if((state.turn+phase)%9===0){let event=simRandom()<.5?'Energy-price pressure':'Regional public-service demands';if(simSpend(n,n.gdp*.001)){ai.approval=clamp(ai.approval+2,0,100);simRecord(c,`${event}: approved targeted relief.`);}else{ai.approval=clamp(ai.approval-3,0,100);simRecord(c,`${event}: deferred relief to protect reserves.`);}}
+  if((state.turn+phase)%9===0){let event=simRandom()<.5?'Energy-price pressure':'Regional public-service demands';if(simSpend(n,n.gdp*.001)){ai.approval=clamp(ai.approval+2,0,100);simRecord(c,`${event}: approved targeted relief.`);}else{ai.approval=clamp(ai.approval-3*Math.max(.25,1-ai.politics.mediaLevel*POLITICS_MEDIA_EVENT_SHIELD),0,100);simRecord(c,`${event}: deferred relief to protect reserves.`);}}
   if((state.turn+phase)%3===0)simDecision(c);
   if(state.front?.active&&(EU.includes(c)||NATO.includes(c))&&!['RU','BY','UA'].includes(c)&&(state.turn+phase)%6===0&&simSpend(n,n.gdp*.0008)){state.front.support=clamp(state.front.support+n.gdp*.00012,0,2);simRecord(c,'Sent a military aid package to Ukraine.',true);}
   for(let w of state.wars)if(w.active&&[w.a,w.b].includes(c))w.postures[c]=n.ready<50?'defensive':ai.risk>.7&&n.ready>70?'offensive':'balanced';
-  if(state.turn>=ai.election){let win=ai.approval>=50;ai.term=win?ai.term+1:1;ai.election=state.turn+48;ai.approval=win?clamp(ai.approval+3,0,100):55;if(!win){ai.focus=['growth','welfare','trade'][Math.floor(simRandom()*3)];ai.welfare=clamp(ai.welfare+(simRandom()-.5)*.3,.2,.9);ai.agenda='New cabinet: '+({growth:'growth and investment',welfare:'public services',trade:'trade and diplomacy'}[ai.focus]);}simRecord(c,win?'The government won a renewed electoral mandate.':'An election brought a new cabinet with revised domestic priorities.',true);}
+  if(state.turn>=ai.election){let win=polElectionScore(c)>=50;ai.term=win?ai.term+1:1;ai.election=state.turn+ai.politics.termMonths;polReset(c);ai.approval=win?clamp(ai.approval+3,0,100):55;if(!win){ai.focus=['growth','welfare','trade'][Math.floor(simRandom()*3)];ai.welfare=clamp(ai.welfare+(simRandom()-.5)*.3,.2,.9);ai.agenda='New cabinet: '+({growth:'growth and investment',welfare:'public services',trade:'trade and diplomacy'}[ai.focus]);}simRecord(c,win?'The government won a renewed electoral mandate.':'An election brought a new cabinet with revised domestic priorities.',true);}
+  polAI(c);polAccrue(c);
   if((state.turn+phase)%12===0&&ai.focus==='influence')for(let rival of ai.rivals)if(world[rival]&&!simAtWar(c,rival))simSetRelation(c,rival,simRelation(c,rival)-8);
   simAIWar(c);
  }
 }
+
+
