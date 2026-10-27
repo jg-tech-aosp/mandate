@@ -15,8 +15,8 @@ function wcMicrostates(){if(wcMicroCells)return wcMicroCells;wcMicroCells=new Ma
 function wcLegal(key,w){let micro=wcMicrostates().get(key);if(micro)return micro;if(wcLegalCache.has(key))return wcLegalCache.get(key);let p=wcPoint(key),c=Object.keys(world).find(c=>wcContains(p,c))||null;wcLegalCache.set(key,c);return c;}
 function wcRoot(c){if(!state)return c;let seen=new Set();while(c&&state.countries[c]?.owner!==c&&!seen.has(c)){seen.add(c);c=state.countries[c]?.owner;}return c;}
 function wcBase(key,w){
- let geographic=wcLegal(key,w),title=state.titles?.[key],c=title||geographic;if(!c)return null;
- if(!title&&state.countries[geographic]?.exile?.occupier)return wcRoot(state.countries[geographic].exile.occupier);
+ let geographic=wcLegal(key,w),title=state.titles?.[key],independent=!title&&typeof resIndependentOwner==='function'?resIndependentOwner(key):null,c=title||independent||geographic;if(!c)return null;
+ if(!title&&!independent&&state.countries[geographic]?.exile?.occupier)return wcRoot(state.countries[geographic].exile.occupier);
  let owner=wcRoot(c);if(owner!==c)return owner;
  if(c==='UA'&&state.mode==='control'&&occupationData&&inside(wcPoint(key),occupationData))return'RU';return c;
 }
@@ -73,7 +73,7 @@ function wcEnsureWorld(){
 function wcCityShare(country,population){return population/Math.max(1,(state?.countries[country]?.pop??profile[country]?.[1]??1)*1000000);}
 function wcCityBonus(city){if(city.capital)return 10;let share=wcCityShare(city.home,city.population);return share>=.05?7:share>=.02?4:share>=.01?2:0;}
 function wcCities(){if(!wcCityCache){wcCityCache=places.filter(p=>p[5]||wcCityShare(p[4],p[3])>=.01).map(p=>({id:p[4]+':'+p[0]+':'+p[1],name:p[0],home:p[4],population:p[3],capital:p[5],key:wcKey(p[1],p[2]),point:[p[1],p[2]]}));}return wcCityCache;}
-function wcCityOwner(city){if(state.titles?.[city.key])return wcOwner(city.key);if(state.control[city.key])return wcRoot(state.control[city.key]);let c=wcRoot(city.home);if(c==='UA'&&state.mode==='control'&&inside(wcPoint(city.key),occupationData))return'RU';return c;}
+function wcCityOwner(city){if(state.titles?.[city.key]||(typeof resIndependentOwner==='function'&&resIndependentOwner(city.key)))return wcOwner(city.key);if(state.control[city.key])return wcRoot(state.control[city.key]);let c=wcRoot(ptSovereign(city.key));if(c==='UA'&&state.mode==='control'&&inside(wcPoint(city.key),occupationData))return'RU';return c;}
 function wcOpening(w,c){return !w.scenario&&w.initiator===c&&w.months<3?1.25:1;}
 function wcPower(w,c){let n=state.countries[c],other=c===w.a?w.b:w.a,stance=w.postures[c],approval=c===state.player?state.approval:n.ai?.approval??58;
  let base=strength(c)+(c===w.b?coalition(c,other):0),morale=.6+n.morale/100*.8,fatigue=clamp(1-w.fatigue[c]*.003,.55,1),politics=.85+approval/400,solvency=clamp(1-Math.max(0,n.debt/n.gdp-1)*.08,.65,1);
