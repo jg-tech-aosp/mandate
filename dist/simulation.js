@@ -40,7 +40,7 @@ function simEnsureWorld(){
 function simDrawFront(){} // Rendering is unified in wcDraw().
 function simFrontCard(){return '';}
 function simCeasefire(){return wcPeace(wcFind(state.player,target));}
-function simResumeFront(){let w=wcFind(state.player,target,true);if(!w)return false;w.active=true;log(`Hostilities between ${name(w.a)} and ${name(w.b)} resume from the saved line of control.`,true);return true;}
+function simResumeFront(){let w=wcFind(state.player,target,true);if(!w)return false;wcSeed(w);w.active=true;log(`Hostilities between ${name(w.a)} and ${name(w.b)} resume from the saved line of control.`,true);return true;}
 function simThreat(c){let n=state.countries[c];return simAtWar(c)?1:n.ai.rivals.some(r=>simAtWar(r))?.75:n.ai.rivals.length?.5:.1;}
 function simRecord(c,message,important=false){let ai=state.countries[c].ai;ai.lastAction=message;ai.lastTurn=state.turn;ai.decisions++;ai.history.unshift({turn:state.turn,text:message});ai.history=ai.history.slice(0,5);if(important||c===target)log(`${name(c)}: ${message}`);}
 function simSpend(n,amount){if(n.treasury<amount)return false;n.treasury-=amount;return true;}
