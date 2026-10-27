@@ -10,7 +10,9 @@ function wcBounds(r){return[Math.min(...r.map(p=>p[0])),Math.min(...r.map(p=>p[1
 function wcInBounds(p,b,margin=0){return p[0]>=b[0]-margin&&p[0]<=b[2]+margin&&p[1]>=b[1]-margin&&p[1]<=b[3]+margin;}
 function wcShapes(){if(!wcShapeCache){wcShapeCache={};for(let c in world)wcShapeCache[c]=rings(world[c].feature).map(poly=>({poly,b:wcBounds(poly[0])}));}return wcShapeCache;}
 function wcContains(p,c){return wcShapes()[c]?.some(({poly,b})=>wcInBounds(p,b)&&insideRing(p,poly[0])&&!poly.slice(1).some(r=>insideRing(p,r)));}
-function wcLegal(key,w){if(wcLegalCache.has(key))return wcLegalCache.get(key);let p=wcPoint(key),preferred=w?[w.a,w.b]:[],c=preferred.find(c=>wcContains(p,c))||Object.keys(world).find(c=>!preferred.includes(c)&&wcContains(p,c))||null;wcLegalCache.set(key,c);return c;}
+let wcMicroCells=null;
+function wcMicrostates(){if(wcMicroCells)return wcMicroCells;wcMicroCells=new Map();for(let c of ['VA','MC','SM','LI','AD']){if(!world[c])continue;let key=wcKey(...world[c].center),near=[key,...wcNeighbors(key)];if(!near.some(k=>wcContains(wcPoint(k),c)))wcMicroCells.set(key,c);}return wcMicroCells;}
+function wcLegal(key,w){let micro=wcMicrostates().get(key);if(micro)return micro;if(wcLegalCache.has(key))return wcLegalCache.get(key);let p=wcPoint(key),c=Object.keys(world).find(c=>wcContains(p,c))||null;wcLegalCache.set(key,c);return c;}
 function wcRoot(c){if(!state)return c;let seen=new Set();while(c&&state.countries[c]?.owner!==c&&!seen.has(c)){seen.add(c);c=state.countries[c]?.owner;}return c;}
 function wcBase(key,w){let c=wcLegal(key,w);if(!c)return null;let owner=wcRoot(c);if(owner!==c)return owner;if(c==='UA'&&state.mode==='control'&&occupationData&&inside(wcPoint(key),occupationData))return'RU';return c;}
 function wcOwner(key,w){return wcRoot(state.control?.[key]||wcBase(key,w));}
@@ -117,6 +119,27 @@ function wcGridOutline(keys){
  }
  return loops;
 }
+// Only sample the boundary band; do not rasterize entire large countries.
+let wcCountryBorderCache=new Map();
+function wcCountryLoops(code){
+ if(wcCountryBorderCache.has(code))return wcCountryBorderCache.get(code);
+ let keys=wcBoundaryKeys(world[code].feature);for(let other in world)if(other!==code)for(let k of wcBoundaryKeys(world[other].feature,world[code].feature))keys.add(k);let band=new Set(keys),edges=new Map();for(let [key,c] of wcMicrostates())if(c===code||wcContains(wcPoint(key),code)){keys.add(key);band.add(key);}
+ for(let key of keys)for(let n of wcNeighbors(key))band.add(n);
+ for(let key of band){if(wcLegal(key,{a:code,b:code})!==code)continue;let [q,r]=key.split(',').map(Number);
+  for(let i=0;i<WC_DIRS.length;i++){let [dq,dr]=WC_DIRS[i];if(wcLegal((q+dq)+','+(r+dr),{a:code,b:code})===code)continue;
+   let [start,end]=WC_EDGES[i].map(c=>{let [x,y]=WC_CORNERS[c];return(2*q+r+x)+','+(3*r+y);});edges.set(start,end);
+  }
+ }
+ let loops=[];
+ while(edges.size){let start=edges.keys().next().value,current=start,loop=[];
+  do{let [x,y]=current.split(',').map(Number);loop.push([x*WC_WIDTH/2,y*WC_RADIUS/2]);let next=edges.get(current);edges.delete(current);current=next;}while(current&&current!==start);
+  if(current!==start)throw Error('Country grid border did not close: '+code);
+  if(loop.length>=3)loops.push(loop);
+ }
+ wcCountryBorderCache.set(code,loops);return loops;
+}
+function wcLoadBorders(data){if(data.radius!==WC_RADIUS)throw Error('Border grid version mismatch');for(let c in data.countries){let loops=data.countries[c].map(([x,y,steps])=>{let points=[[x*WC_WIDTH/2,y*WC_RADIUS/2]];for(let i=0;i<steps.length-1;i++){let [dx,dy]=WC_CORNERS[Number(steps[i])];x+=dx;y+=dy;points.push([x*WC_WIDTH/2,y*WC_RADIUS/2]);}return points;});wcCountryBorderCache.set(c,loops);}}
+function wcCountryPath(code){ctx.beginPath();for(let loop of wcCountryLoops(code)){loop.forEach((p,i)=>{let q=screen(...p);i?ctx.lineTo(...q):ctx.moveTo(...q);});ctx.closePath();}}
 function wcScenarioGrid(){
  if(wcScenarioGridCache)return wcScenarioGridCache;
  let bounds=wcBounds(rings(occupationData).flatMap(p=>p[0])),keys=new Set();
