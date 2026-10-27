@@ -37,6 +37,7 @@ function simEnsureWorld(){
  for(let c in state.countries){let n=state.countries[c];n.ai??={...simPersonality(c),approval:58,election:state.turn+48,term:1,lastAction:'Government agenda established.',lastTurn:-10,decisions:0,history:[]};}
  polEnsure();
  wcEnsureWorld();
+ resEnsure();
 }
 function simDrawFront(){} // Rendering is unified in wcDraw().
 function simFrontCard(){return '';}
@@ -82,7 +83,7 @@ function simAIWar(c){let n=state.countries[c],ai=n.ai;if(ai.risk<.8||state.turn<
 }
 function simRunAI(){
  state.offers=state.offers.filter(o=>o.expires>state.turn);
- for(let c in state.countries){if(c===state.player)continue;let n=state.countries[c],ai=n.ai;if(n.owner!==c)continue;
+ for(let c in state.countries){if(c===state.player)continue;let n=state.countries[c],ai=n.ai;if(n.owner!==c||n.revolt||n.disbanded||n.exile)continue;
   ai.approval=clamp(ai.approval+.15+n.growth*.1+(n.health-6)*.1-(n.tax-32)*.05-(simAtWar(c)?.35:0)+ai.politics.mediaLevel*POLITICS_MEDIA_DRIFT,0,100);
   let phase=(c.charCodeAt(0)+c.charCodeAt(1));
   if((state.turn+phase)%9===0){let event=simRandom()<.5?'Energy-price pressure':'Regional public-service demands';if(simSpend(n,n.gdp*.001)){ai.approval=clamp(ai.approval+2,0,100);simRecord(c,`${event}: approved targeted relief.`);}else{ai.approval=clamp(ai.approval-3*Math.max(.25,1-ai.politics.mediaLevel*POLITICS_MEDIA_EVENT_SHIELD),0,100);simRecord(c,`${event}: deferred relief to protect reserves.`);}}
