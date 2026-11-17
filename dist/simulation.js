@@ -38,6 +38,7 @@ function simEnsureWorld(){
  polEnsure();
  wcEnsureWorld();
  resEnsure();
+ econEnsure();
 }
 function simDrawFront(){} // Rendering is unified in wcDraw().
 function simFrontCard(){return '';}
@@ -75,7 +76,7 @@ function simDecision(c){
   if(simSpend(n,n.gdp*.002)){n.force+=Math.max(.5,n.gdp*.004);n.ready=clamp(n.ready+5,0,100);simRecord(c,simAtWar(c)?'Reinforced the front and replenished equipment.':'Invested in military readiness and deterrence.');return;}
  }
  if(decision==='trade'&&simDiplomacy(c))return;
- if(simSpend(n,n.gdp*.002)){n.gdp*=1.0015;ai.approval=clamp(ai.approval+1,0,100);simRecord(c,'Approved an infrastructure investment programme.');}else simRecord(c,'Prioritized reserve recovery and deferred new spending.');
+ if(simSpend(n,n.gdp*.002)){econFundInvestment(n,n.gdp*.002);ai.approval=clamp(ai.approval+1,0,100);simRecord(c,'Approved an infrastructure investment programme.');}else simRecord(c,'Prioritized reserve recovery and deferred new spending.');
 }
 function simAIWar(c){let n=state.countries[c],ai=n.ai;if(ai.risk<.8||state.turn<9||simAtWar(c)||state.wars.filter(w=>w.active).length>=2)return;
  for(let b of ai.rivals){if(ptTruce(c,b)||state.countries[c].overlord||!world[b]||allied(c,b)||state.countries[b].owner!==b||simFrontPair(c,b)||simRelation(c,b)>-65)continue;
