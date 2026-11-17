@@ -47,7 +47,7 @@ function wcLanding(w){
 }
 function wcCreateWar(a,b,options={}){
  let w={id:'war_'+a+'_'+b+'_'+state.turn,shared:true,a,b,initiator:a,active:true,months:0,startedTurn:state.turn,postures:{[a]:'balanced',[b]:'balanced'},fatigue:{[a]:0,[b]:0},support:0,frontier:[],last:{winner:null,cells:0,cities:[]},capitalHolds:{},...options};
- wcSeed(w);return w;
+ wcSeed(w);if(typeof milPrepareWar==='function')milPrepareWar(w);return w;
 }
 function wcLegacyHex(p,radius){return Array.from({length:6},(_,k)=>{let a=(60*k+30)*Math.PI/180;return[p[0]+radius*1.5*Math.cos(a),p[1]+radius*Math.sin(a)];});}
 function wcImportOldFront(old){if(!old?.owners)return;let g=simGrid();for(let i=0;i<old.owners.length;i++){if(old.owners[i]===g.initial[i]||!g.cells[i])continue;let p=g.cells[i],poly=wcLegacyHex(p,g.radius),minRow=Math.floor((p[1]-g.radius)/WC_HEIGHT),maxRow=Math.ceil((p[1]+g.radius)/WC_HEIGHT);for(let r=minRow;r<=maxRow;r++){let q0=Math.floor((p[0]-g.radius*1.5)/WC_WIDTH-r/2),q1=Math.ceil((p[0]+g.radius*1.5)/WC_WIDTH-r/2);for(let q=q0;q<=q1;q++){let key=q+','+r,point=wcPoint(key);if(insideRing(point,poly)&&wcLegal(key)==='UA')wcSetOwner(key,old.owners[i]?'RU':'UA');}}}}
@@ -76,8 +76,8 @@ function wcCities(){if(!wcCityCache){wcCityCache=places.filter(p=>p[5]||wcCitySh
 function wcCityOwner(city){if(state.titles?.[city.key]||(typeof resIndependentOwner==='function'&&resIndependentOwner(city.key)))return wcOwner(city.key);if(state.control[city.key])return wcRoot(state.control[city.key]);let c=wcRoot(ptSovereign(city.key));if(c==='UA'&&state.mode==='control'&&inside(wcPoint(city.key),occupationData))return'RU';return c;}
 function wcOpening(w,c){return !w.scenario&&w.initiator===c&&w.months<3?1.25:1;}
 function wcPower(w,c){let n=state.countries[c],other=c===w.a?w.b:w.a,stance=w.postures[c],approval=c===state.player?state.approval:n.ai?.approval??58;
- let base=strength(c)+(c===w.b?coalition(c,other):0),morale=.6+n.morale/100*.8,fatigue=clamp(1-w.fatigue[c]*.003,.55,1),politics=.85+approval/400,solvency=clamp(1-Math.max(0,n.debt/n.gdp-1)*.08,.65,1);
- return Math.sqrt(Math.max(.1,base))*morale*fatigue*politics*solvency*(stance==='offensive'?1.18:stance==='defensive'?.97:1)*wcOpening(w,c)*(w.scenario&&c==='UA'?1.23+w.support*.18:1);
+ let base=(typeof milWarPower==='function'?milWarPower(w,c):strength(c))+(c===w.b?coalition(c,other):0),morale=.6+n.morale/100*.8,fatigue=clamp(1-w.fatigue[c]*.003,.55,1),politics=.85+approval/400,solvency=clamp(1-Math.max(0,n.debt/n.gdp-1)*.08,.65,1),supply=typeof milCombatSupply==='function'?.4+milCombatSupply(c)*.6:1;
+ return Math.sqrt(Math.max(.1,base))*morale*fatigue*politics*solvency*supply*(stance==='offensive'?1.18:stance==='defensive'?.97:1)*wcOpening(w,c)*(w.scenario&&c==='UA'?1.23+w.support*.18:1);
 }
 function wcMood(c,delta){let n=state.countries[c];n.morale=clamp(n.morale+delta,0,100);if(c===state.player)state.approval=clamp(state.approval+delta*.35,0,100);else if(n.ai)n.ai.approval=clamp(n.ai.approval+delta*.35,0,100);}
 function wcCityChanges(w,before){state.cityMorale??={};w.last.cities=[];for(let city of wcCities()){
@@ -108,7 +108,7 @@ function wcAdvanceWar(w){
   }
   w.frontier=[...frontier].filter(k=>wcOpposing(k,w));w.last.winner=used?winner:null;w.last.cells=used;
  }
- for(let c of [w.a,w.b]){let n=state.countries[c],off=w.postures[c]==='offensive';n.force=Math.max(.5,n.force*(off?.994:.997));n.ready=clamp(n.ready-(off?1.1:.5),20,100);w.fatigue[c]=clamp(w.fatigue[c]+(off?.65:.35),0,100);n.morale=clamp(n.morale-(off?.18:.08),0,100);}
+ for(let c of [w.a,w.b]){let n=state.countries[c],off=w.postures[c]==='offensive';if(typeof milCombatCasualties==='function')milCombatCasualties(c,w,off);w.fatigue[c]=clamp(w.fatigue[c]+(off?.65:.35),0,100);n.morale=clamp(n.morale-(off?.18:.08),0,100);}
  wcCityChanges(w,beforeCities);w.months++;w.support*=.94;
  if(w.last.cells)log(`${name(w.last.winner)} advanced ${w.last.cells} small sectors on the ${name(w.a)}–${name(w.b)} front${w.months<=3&&!w.scenario?' during the opening phase':''}.`,true);else if(state.turn%3===0)log(`The ${name(w.a)}–${name(w.b)} front held this month.`,true);
  if(w.revoltId)resResolveRevolt(w);else if(w.liberation)resResolveExileWar(w);else wcCapitulation(w);
@@ -205,3 +205,4 @@ function wcTerritorySummary(w){let t=wcTerritoryStats(w),mine=[w.a,w.b].includes
 
 function wcCard(w){let mine=[w.a,w.b].includes(state.player),last=w.last;return `<div class="card"><b>${name(w.a)} ↔ ${name(w.b)}</b><p>${w.active?'Active shared front':'Ceasefire'} · ${w.months} ${w.months===1?'month':'months'}</p>${wcTerritorySummary(w)}<p>${last.winner?`${name(last.winner)} advanced ${last.cells} sectors last month.`:'The line of control is holding.'}</p>${!w.scenario&&w.months<3?`<p class="positive">${name(w.initiator)}: +25% opening initiative · ${3-w.months} turns left</p>`:''}<p>Morale: ${name(w.a)} ${Math.round(state.countries[w.a].morale)}% · ${name(w.b)} ${Math.round(state.countries[w.b].morale)}%</p>${mine&&w.active?`<label class="row">Front posture<select aria-label="Campaign posture" data-war-posture="${w.id}">${['balanced','offensive','defensive'].map(p=>`<option ${w.postures[state.player]===p?'selected':''}>${p}</option>`).join('')}</select></label>`:''}<p class="note">Small shared hex sectors. Cities with 1%+ of their home population affect morale: +2 at 1%, +4 at 2%, +7 at 5%; capitals +10. Ceasefires preserve control.</p></div>`;}
 function wcPeace(w){if(!w?.active)return false;let other=state.player===w.a?w.b:w.a;if(w.months<6&&w.fatigue[other]<15){notify('Ceasefire rejected. The opponent still expects military gains.');return true;}w.active=false;log(`Ceasefire agreed between ${name(w.a)} and ${name(w.b)}. The current line of control is frozen.`,true);return true;}
+

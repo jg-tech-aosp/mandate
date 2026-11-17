@@ -36,9 +36,10 @@ function simEnsureWorld(){
  state.rng??=0x4d414e44;state.offers??=[];
  for(let c in state.countries){let n=state.countries[c];n.ai??={...simPersonality(c),approval:58,election:state.turn+48,term:1,lastAction:'Government agenda established.',lastTurn:-10,decisions:0,history:[]};}
  polEnsure();
+ econEnsure();
+ milEnsureAll();
  wcEnsureWorld();
  resEnsure();
- econEnsure();
 }
 function simDrawFront(){} // Rendering is unified in wcDraw().
 function simFrontCard(){return '';}
@@ -73,7 +74,12 @@ function simDecision(c){
  if(decision==='stability'&&simSpend(n,n.gdp*.0015)){n.health=clamp(n.health+1,1,10);ai.approval=clamp(ai.approval+3,0,100);simRecord(c,'Funded public services to rebuild government support.');return;}
  if(decision==='security'){
   if(n.defense<(simAtWar(c)?8:5)&&e.net>0)n.defense++;
-  if(simSpend(n,n.gdp*.002)){n.force+=Math.max(.5,n.gdp*.004);n.ready=clamp(n.ready+5,0,100);simRecord(c,simAtWar(c)?'Reinforced the front and replenished equipment.':'Invested in military readiness and deterrence.');return;}
+  if(simAtWar(c)&&!n.mobilized&&threat>.5){milSetMobilized(c,true);ai.approval=clamp(ai.approval-5,0,100);}
+  let recruited=milRecruit(c);
+  if(recruited.ok){simRecord(c,'Recruited and equipped a '+recruited.personnel.toFixed(1)+'k-personnel division.');return;}
+  let trained=milTrain(c);
+  if(trained.ok){simRecord(c,'Funded military exercises to improve formation readiness.');return;}
+  simRecord(c,'Deferred recruitment: '+recruited.reason);return;
  }
  if(decision==='trade'&&simDiplomacy(c))return;
  if(simSpend(n,n.gdp*.002)){econFundInvestment(n,n.gdp*.002);ai.approval=clamp(ai.approval+1,0,100);simRecord(c,'Approved an infrastructure investment programme.');}else simRecord(c,'Prioritized reserve recovery and deferred new spending.');
@@ -85,7 +91,7 @@ function simAIWar(c){let n=state.countries[c],ai=n.ai;if(ai.risk<.8||state.turn<
 function simRunAI(){
  state.offers=state.offers.filter(o=>o.expires>state.turn);
  for(let c in state.countries){if(c===state.player)continue;let n=state.countries[c],ai=n.ai;if(n.owner!==c||n.revolt||n.disbanded||n.exile)continue;
-  ai.approval=clamp(ai.approval+.15+n.growth*.1+(n.health-6)*.1-(n.tax-32)*.05-(simAtWar(c)?.35:0)+ai.politics.mediaLevel*POLITICS_MEDIA_DRIFT,0,100);
+  ai.approval=clamp(ai.approval+.15+n.growth*.1+(n.health-6)*.1-(n.tax-32)*.05-(simAtWar(c)?.35:0)-(n.mobilized?.25:0)+ai.politics.mediaLevel*POLITICS_MEDIA_DRIFT,0,100);
   let phase=(c.charCodeAt(0)+c.charCodeAt(1));
   if((state.turn+phase)%9===0){let event=simRandom()<.5?'Energy-price pressure':'Regional public-service demands';if(simSpend(n,n.gdp*.001)){ai.approval=clamp(ai.approval+2,0,100);simRecord(c,`${event}: approved targeted relief.`);}else{ai.approval=clamp(ai.approval-3*Math.max(.25,1-ai.politics.mediaLevel*POLITICS_MEDIA_EVENT_SHIELD),0,100);simRecord(c,`${event}: deferred relief to protect reserves.`);}}
   if((state.turn+phase)%3===0)simDecision(c);
@@ -94,7 +100,7 @@ function simRunAI(){
 
   polAI(c);
   if((state.turn+phase)%12===0&&ai.focus==='influence')for(let rival of ai.rivals)if(world[rival]&&!simAtWar(c,rival))simSetRelation(c,rival,simRelation(c,rival)-8);
-  simAIWar(c);
+  simAIWar(c);milAutoDeploy(c);
  }
 }
 

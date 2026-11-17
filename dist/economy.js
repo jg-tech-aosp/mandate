@@ -95,9 +95,9 @@ function econAdvanceAll(){
   let production=Object.values(m.supply.output).reduce((a,b)=>a+b,0),imports=Object.values(m.imports).reduce((a,b)=>a+b,0),exports=Object.values(m.exports).reduce((a,b)=>a+b,0);
   let unmet=0,totalDemand=0;
   for(let sector of ECONOMY_GOODS){
-   let desired=m.supply.demand[sector],available=m.stock[sector];
+   let desired=m.supply.demand[sector],available=m.stock[sector];if(sector==='military')desired=0;
    unmet+=Math.max(0,desired-available);totalDemand+=desired;
-   e.inventory[sector]=econClamp(available-desired,0,desired*6);
+   e.inventory[sector]=econClamp(available-desired,0,(m.supply.demand[sector]||0)*(sector==='military'?12:6));
   }
   let shortage=totalDemand?econClamp(unmet/totalDemand,0,1):0;
   let receivedSanctions=econSanctionCount(c),issuedSanctions=n.sanctions?.length||0;
@@ -117,8 +117,6 @@ function econAdvanceAll(){
   n.gdp=Math.max(.01,oldGDP*(1+n.growth/1200));
   n.treasury+=statement.net;
   if(n.treasury<0){n.debt-=n.treasury;n.treasury=0;}
-  n.force+=n.gdp*n.defense/100*.025;
-  n.ready=econClamp(n.ready+.7+(n.defense-3)*.18,25,100);
   if(n.owner!==c)n.treasury*=.95;
   let importsBySector={...m.imports},exportsBySector={...m.exports};
   e.lastMonth={production,imports,exports,shortage,investment,utilization:m.supply.utilization,importsBySector,exportsBySector,publicInvestment,privateInvestment,netTrade,confidence:e.confidence,monthlyRevenue:statement.revenue,monthlySpending:statement.spend};
