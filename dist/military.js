@@ -13,6 +13,7 @@ function milClamp(v,min,max){return Math.max(min,Math.min(max,v));}
 function milDivisions(n){return(n?.military?.formations||[]).flatMap(f=>f.divisions||[]);}
 function milRawForce(n){return milDivisions(n).reduce((sum,d)=>sum+Math.max(0,d.personnel||0)*milClamp(d.equipment??1,0,1),0);}
 function milRawReadiness(n){let all=milDivisions(n),people=all.reduce((s,d)=>s+Math.max(0,d.personnel||0),0);return people?all.reduce((s,d)=>s+(d.personnel||0)*milClamp(d.readiness??65,0,100),0)/people:0;}
+function milLegacyReadiness(n,fallback=65){let value=n?.ready;return value!==undefined&&value!==null&&Number.isFinite(Number(value))?milClamp(Number(value),0,100):fallback;}
 function milMakeRoster(n,total,readiness=65){
  let remaining=Math.max(0,total),divisions=[],i=0;
  while(remaining>.001){let personnel=Math.min(MIL_DIVISION_SIZE,remaining);i++;
@@ -32,13 +33,13 @@ function milInstallAliases(n){
 function milSetForce(n,value){
  if(!n?.military)return;let wanted=Math.max(0,Number(value)||0),current=milRawForce(n),all=milDivisions(n);
  if(current>0){let factor=wanted/current;for(let d of all)d.personnel=Math.max(0,(d.personnel||0)*factor);}
- else if(wanted)n.military.formations=milMakeRoster(n,wanted,n.ready||60);
+ else if(wanted)n.military.formations=milMakeRoster(n,wanted,milLegacyReadiness(n,60));
  milSyncCountry(n);
 }
 function milSetReadiness(n,value){if(!n?.military)return;for(let d of milDivisions(n))d.readiness=milClamp(Number(value)||0,0,100);}
 function milEnsureCountry(n){
  if(!n)return;if(typeof econEnsureCountry==='function')econEnsureCountry(n);
- let oldForce=Math.max(0,Number(n.force)||0),oldReady=milClamp(Number(n.ready)||65,0,100);
+ let oldForce=Math.max(0,Number(n.force)||0),oldReady=milLegacyReadiness(n);
  n.military??={};let m=n.military;
  if(m.schema!==MILITARY_SCHEMA){m={schema:MILITARY_SCHEMA,formations:milMakeRoster(n,oldForce,oldReady),manualControl:false,lastMonth:null};n.military=m;}
  m.formations=Array.isArray(m.formations)?m.formations:[];
