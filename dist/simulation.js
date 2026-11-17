@@ -64,8 +64,8 @@ function simDiplomacy(c){
  n.trades.push(b);state.countries[b].trades.push(c);simSetRelation(c,b,simRelation(c,b)+4);simRecord(c,`Signed a trade agreement with ${name(b)}.`,true);return true;
 }
 function simDecision(c){
- const n=state.countries[c],ai=n.ai,threat=simThreat(c),e=economy(n);
- let choices=[{kind:'stability',score:(60-ai.approval)*.06+ai.welfare},{kind:'budget',score:e.net<0&&n.treasury<n.gdp*.015?5:0},{kind:'security',score:threat*3+(ai.focus==='security'?1:0)+(n.ready<65?1:0)},{kind:'trade',score:ai.focus==='trade'?2.3:1.1},{kind:'growth',score:ai.focus==='growth'?2.2:1.1}];
+ const n=state.countries[c],ai=n.ai,threat=simThreat(c),e=economy(n),welfarePlatform=polGovernmentPosition(c,'welfare'),securityPlatform=polGovernmentPosition(c,'security'),taxPlatform=polGovernmentPosition(c,'tax');
+ let choices=[{kind:'stability',score:(60-ai.approval)*.06+ai.welfare+(welfarePlatform-.5)*1.2},{kind:'budget',score:(e.net<0&&n.treasury<n.gdp*.015?5:0)+(taxPlatform<.4?1:0)},{kind:'security',score:threat*3+(ai.focus==='security'?1:0)+(n.ready<65?1:0)+(securityPlatform-.5)*1.2},{kind:'trade',score:(ai.focus==='trade'?2.3:1.1)+(taxPlatform<.45?.4:0)},{kind:'growth',score:ai.focus==='growth'?2.2:1.1}];
  for(let x of choices)x.score+=simRandom()*1.5;
  let decision=choices.sort((a,b)=>b.score-a.score)[0].kind;
  if(decision==='budget'){if(n.tax<42)n.tax++;else if(n.infra>3)n.infra--;simRecord(c,'Adjusted the budget to reduce the deficit.');return;}
@@ -90,11 +90,12 @@ function simRunAI(){
   if((state.turn+phase)%3===0)simDecision(c);
   if(state.front?.active&&(EU.includes(c)||NATO.includes(c))&&!['RU','BY','UA'].includes(c)&&(state.turn+phase)%6===0&&simSpend(n,n.gdp*.0008)){state.front.support=clamp(state.front.support+n.gdp*.00012,0,2);simRecord(c,'Sent a military aid package to Ukraine.',true);}
   for(let w of state.wars)if(w.active&&[w.a,w.b].includes(c))w.postures[c]=n.ready<50?'defensive':ai.risk>.7&&n.ready>70?'offensive':'balanced';
-  if(state.turn>=ai.election){let win=polElectionScore(c)>=50;ai.term=win?ai.term+1:1;ai.election=state.turn+ai.politics.termMonths;polReset(c);ai.approval=win?clamp(ai.approval+3,0,100):55;if(!win){ai.focus=['growth','welfare','trade'][Math.floor(simRandom()*3)];ai.welfare=clamp(ai.welfare+(simRandom()-.5)*.3,.2,.9);ai.agenda='New cabinet: '+({growth:'growth and investment',welfare:'public services',trade:'trade and diplomacy'}[ai.focus]);}simRecord(c,win?'The government won a renewed electoral mandate.':'An election brought a new cabinet with revised domestic priorities.',true);}
-  polAI(c);polAccrue(c);
+
+  polAI(c);
   if((state.turn+phase)%12===0&&ai.focus==='influence')for(let rival of ai.rivals)if(world[rival]&&!simAtWar(c,rival))simSetRelation(c,rival,simRelation(c,rival)-8);
   simAIWar(c);
  }
 }
+
 
 
