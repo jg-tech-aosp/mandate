@@ -96,4 +96,36 @@ function econAdvanceAll(){
   let unmet=0,totalDemand=0;
   for(let sector of ECONOMY_GOODS){
    let desired=m.supply.demand[sector],available=m.stock[sector];
-   unmet+=Math.max(0,desired-available);t
+   unmet+=Math.max(0,desired-available);totalDemand+=desired;
+   e.inventory[sector]=econClamp(available-desired,0,desired*6);
+  }
+  let shortage=totalDemand?econClamp(unmet/totalDemand,0,1):0;
+  let receivedSanctions=econSanctionCount(c),issuedSanctions=n.sanctions?.length||0;
+  let netTrade=exports-imports,tradeEffect=econClamp(netTrade/(oldGDP/12)*.55,-2,2);
+  let governmentStability=n.politics?.government?.stability??55;
+  let approval=c===state.player?state.approval:(n.ai?.approval??58);
+  let legitimacy=c===state.player?state.legitimacy:(n.ai?.legitimacy??60);
+  let confidenceDelta=(approval-55)*.012+(legitimacy-50)*.008+(governmentStability-50)*.015-shortage*1.4-receivedSanctions*.5-issuedSanctions*.15-(n.debt/oldGDP>1?.25:0);
+  e.confidence=econClamp(e.confidence+confidenceDelta,0,100);
+  let publicInvestment=oldGDP*n.infra/100/12,privateInvestment=oldGDP*(.012*e.confidence/100)/12;
+  let investment=publicInvestment+privateInvestment+e.pendingInvestment;
+  let capacityGain=investment*12*ECONOMY_CAPITAL_EFFICIENCY;
+  e.capacity.manufacturing+=capacityGain*.55;e.capacity.services+=capacityGain*.25;e.capacity.energy+=capacityGain*.12;e.capacity.materials+=capacityGain*.08;
+  e.pendingInvestment=0;e.factories=Math.max(0,Number(e.capacity.manufacturing)||0);
+  let baseGrowth=1-Math.min(3,receivedSanctions*.22)+(n.education-5)*.14+(n.infra-5)*.2+(n.health-6)*.07-(n.tax-30)*.07+Math.min(1.5,exports/(oldGDP/12)*.2)-issuedSanctions*.18-(n.mobilized?.8:0)-(simAtWar(c)?2:0)-Math.max(0,n.debt/oldGDP-.8)*2;
+  n.growth=econClamp(baseGrowth+tradeEffect-shortage*5+(e.confidence-50)*.015, -8,9);
+  n.gdp=Math.max(.01,oldGDP*(1+n.growth/1200));
+  n.treasury+=statement.net;
+  if(n.treasury<0){n.debt-=n.treasury;n.treasury=0;}
+  n.force+=n.gdp*n.defense/100*.025;
+  n.ready=econClamp(n.ready+.7+(n.defense-3)*.18,25,100);
+  if(n.owner!==c)n.treasury*=.95;
+  let importsBySector={...m.imports},exportsBySector={...m.exports};
+  e.lastMonth={production,imports,exports,shortage,investment,utilization:m.supply.utilization,importsBySector,exportsBySector,publicInvestment,privateInvestment,netTrade,confidence:e.confidence,monthlyRevenue:statement.revenue,monthlySpending:statement.spend};
+  delete e._market;
+ }
+}
+function econPanel(n){
+ econEnsureCountry(n);let e=n.economy,m=e.lastMonth||{};
+ return'<div class="card"><b>Industry and trade</b><div class="row"><span>Factory capacity units</span><b>'+e.factories.toLocaleString()+'</b></div><div class="row"><span>Monthly industrial output</span><b>'+money(m.production||0)+'</b></div><div class="row"><span>Imports / exports</span><b>'+money(m.imports||0)+' / '+money(m.exports||0)+'</b></div><div class="row"><span>Supply shortfall</span><b>'+((m.shortage||0)*100).toFixed(1)+'%</b></div><div class="row"><span>Investment confidence</span><b>'+Math.round(e.confidence)+'%</b></div><p>Capacities and stocks use illustrative euro-bn values derived from national GDP, population, and the existing force profile. Trade agreements transfer actual surpluses to partner shortfalls; bilateral sanctions block flows and outside sanctions reduce access.</p></div>';
+}
