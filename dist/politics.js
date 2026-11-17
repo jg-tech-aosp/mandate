@@ -118,7 +118,7 @@ function polUpdatePolls(c,initialize=false){
   let v=party.base+(party.positions.tax-market)*(market-.5)*16+(party.positions.welfare-.5)*(welfare-.5)*16+(party.positions.security-.5)*(security-.5)*12;
   v+=(party.positions.liberty-.5)*((inst/100)-.5)*10+(party.positions.authority-.5)*(1-inst/100)*10;
   v+=party.populism*(.5-growth)*8;
-  if(governing.has(party.id))v+=(approval-50)*.075+(legitimacy-50)*.035-(debt-.35)*4-(atWar*.5);
+  if(governing.has(party.id))v+=(approval-50)*.075+(legitimacy-50)*.035-(debt-.35)*4-(atWar*.5)+(polNumber(n.morale,65)-65)*.08;
   if(p.regime==='authoritarian'&&governing.has(party.id))v+=(100-inst)*.18;
   raw.push(Math.max(1,v));
  }

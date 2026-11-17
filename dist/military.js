@@ -82,6 +82,21 @@ function milTrain(c){
  n.treasury-=cost;let gain=4*supplied;for(let d of milDivisions(n))d.readiness=milClamp(d.readiness+gain,0,100);
  milSyncCountry(n);return{ok:true,cost,gain};
 }
+function milDeliverAidEquipment(c,w){
+ let n=typeof c==='string'?state.countries[c]:c;milEnsureCountry(n);let goods=(n.gdp||1)*.00008;
+ if(!w?.active)return{ok:false,reason:'There is no active front to support.'};
+ if((n.economy.inventory.military||0)+1e-9<goods)return{ok:false,reason:'Military stocks cannot cover an aid shipment.'};
+ n.economy.inventory.military=Math.max(0,n.economy.inventory.military-goods);w.support=milClamp((w.support||0)+.16,0,2);
+ return{ok:true,goods,support:.16};
+}
+function milSendAid(c,w){
+ let n=typeof c==='string'?state.countries[c]:c;milEnsureCountry(n);let cash=(n.gdp||1)*.0008;
+ if((n.treasury||0)+1e-9<cash)return{ok:false,reason:'Treasury reserves cannot cover the aid package.'};
+ let shipment=milDeliverAidEquipment(n,w);if(!shipment.ok)return shipment;
+ n.treasury-=cash;let recipient=w.a==='UA'||w.b==='UA'?'UA':(w.a===n.code?w.b:w.a);
+ if(state.countries[recipient])state.countries[recipient].treasury+=cash;
+ return{ok:true,cash,goods:shipment.goods,support:shipment.support,recipient};
+}
 function milSetMobilized(c,enabled){
  let n=typeof c==='string'?state.countries[c]:c;milEnsureCountry(n);let was=!!n.mobilized;n.mobilized=!!enabled;milSyncCountry(n);return was!==n.mobilized;
 }

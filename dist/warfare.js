@@ -108,7 +108,7 @@ function wcAdvanceWar(w){
   }
   w.frontier=[...frontier].filter(k=>wcOpposing(k,w));w.last.winner=used?winner:null;w.last.cells=used;
  }
- for(let c of [w.a,w.b]){let n=state.countries[c],off=w.postures[c]==='offensive';if(typeof milCombatCasualties==='function')milCombatCasualties(c,w,off);w.fatigue[c]=clamp(w.fatigue[c]+(off?.65:.35),0,100);n.morale=clamp(n.morale-(off?.18:.08),0,100);}
+ for(let c of [w.a,w.b]){let n=state.countries[c],off=w.postures[c]==='offensive';if(typeof milCombatCasualties==='function')milCombatCasualties(c,w,off);w.fatigue[c]=clamp(w.fatigue[c]+(off?.65:.35),0,100);n.morale=clamp(n.morale-(off?.18:.08),0,100);if(w.last.cells){let support=w.last.winner===c?.25:-.4;if(c===state.player)state.approval=clamp(state.approval+support,0,100);else if(n.ai)n.ai.approval=clamp(n.ai.approval+support,0,100);}}
  wcCityChanges(w,beforeCities);w.months++;w.support*=.94;
  if(w.last.cells)log(`${name(w.last.winner)} advanced ${w.last.cells} small sectors on the ${name(w.a)}–${name(w.b)} front${w.months<=3&&!w.scenario?' during the opening phase':''}.`,true);else if(state.turn%3===0)log(`The ${name(w.a)}–${name(w.b)} front held this month.`,true);
  if(w.revoltId)resResolveRevolt(w);else if(w.liberation)resResolveExileWar(w);else wcCapitulation(w);
