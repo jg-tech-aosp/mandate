@@ -163,3 +163,7 @@ function milPanel(n){
  html+=`<p class="note">A division uses available manpower, treasury and military goods. Deployment takes a month; frontline supply and infrastructure affect readiness and combat. Mobilization expands the eligible reserve pool but creates no strength by itself.</p></div>`;
  html+=wars.length?`<h3>Active campaigns</h3>${wars.map(w=>wcCard(w)).join('')}`:`<p class="note">No active fronts.</p>`;return html;
 }
+function milInspector(n){
+ milEnsureCountry(n);let m=n.military,divisions=milDivisions(n),personnel=milRawPersonnel(n),deployed=m.formations.filter(f=>f.deployment!=='home'&&f.arrivalTurn<=state.turn).reduce((s,f)=>s+f.divisions.reduce((a,d)=>a+d.personnel*d.equipment,0),0),last=m.lastMonth||{};
+ return'<h3>Military and logistics</h3><div class="card"><div class="row"><span>Personnel / divisions</span><b>'+personnel.toFixed(1)+'k / '+divisions.length+'</b></div><div class="row"><span>Readiness</span><b>'+n.ready.toFixed(0)+'%</b></div><div class="row"><span>Available manpower</span><b>'+m.availableManpower.toFixed(1)+'k</b></div><div class="row"><span>Frontline deployment</span><b>'+((n.force?deployed/n.force:0)*100).toFixed(0)+'%</b></div><div class="row"><span>Supply delivered</span><b>'+Math.round((last.supplyRatio??1)*100)+'%</b></div><div class="row"><span>Military equipment stock</span><b>'+money(n.economy.inventory.military||0)+'</b></div><div class="row"><span>Defence budget</span><b>'+n.defense+'% of GDP</b></div><div class="row"><span>Mobilization</span><b>'+(n.mobilized?'Active':'Standby')+'</b></div></div>';
+}
