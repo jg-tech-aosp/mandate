@@ -86,31 +86,18 @@ function wcCityChanges(w,before){state.cityMorale??={};w.last.cities=[];for(let 
  if(cooled){wcMood(to,bonus);wcMood(from,-bonus);state.cityMorale[city.id]=state.turn;w.fatigue[from]=clamp(w.fatigue[from]+2,0,100);}
  w.last.cities.push(city.name);log(`${name(to)} ${to===city.home?'liberated':'captured'} ${city.name}${city.capital?' (capital)':''}.${cooled?` Morale: ${name(to)} +${bonus}, ${name(from)} −${bonus}.`:' Morale effects are on cooldown after recent fighting.'}`,true);
 }}
+function wcRefreshFrontier(w,touched=[]){
+ let candidates=new Set(w.frontier||[]);for(let key of touched){candidates.add(key);for(let next of wcNeighbors(key))candidates.add(next);}
+ w.frontier=[...candidates].filter(key=>wcOpposing(key,w));return w.frontier;
+}
 function wcAdvanceWar(w){
- if(!w.active)return;let beforeCities=Object.fromEntries(wcCities().map(c=>[c.id,wcCityOwner(c)]));
- let pa=wcPower(w,w.a),pb=wcPower(w,w.b),noise=(simRandom()-.5)*.22,delta=Math.log(pa/Math.max(.1,pb))+noise;
- let winner=delta>=0?w.a:w.b,loser=winner===w.a?w.b:w.a,ratio=winner===w.a?pa/pb:pb/pa;
- w.last={winner:null,cells:0,cities:[]};
- if(Math.abs(delta)>.035&&!(Math.abs(delta)<.15&&simRandom()<.35)){
-  let frontier=new Set(w.frontier),candidateKeys=()=>[...frontier].filter(k=>wcOwner(k,w)===loser&&(wcNeighbors(k).some(n=>wcOwner(n,w)===winner)||(w.landing===k&&winner===w.a)));
-  let pool=candidateKeys(),budget=clamp(Math.round(Math.max(10,w.frontier.length)*(w.scenario?.012:.12)*Math.pow(ratio,.7)*(w.supply||1)),1,900);
-  if(w.postures[loser]==='defensive')budget=Math.max(1,Math.round(budget*.72));
-  // Recapture lost home territory before opening a second invasion across the legal border.
-  let queue=[],seen=new Set(),used=0,homePriority=false;
-  while(used<budget){
-   if(!queue.length){pool=candidateKeys().filter(k=>!seen.has(k));if(!pool.length)break;let home=pool.filter(k=>wcLegal(k,w)===winner);homePriority=home.length>0;if(homePriority)pool=home;
-    let seed=pool.map(k=>({k,score:wcNeighbors(k).filter(n=>wcOwner(n,w)===winner).length+simRandom()})).sort((a,b)=>b.score-a.score)[0].k;queue.push(seed);
-   }
-   let key=queue.shift();if(seen.has(key))continue;seen.add(key);if(wcOwner(key,w)!==loser||(!wcNeighbors(key).some(k=>wcOwner(k,w)===winner)&&!(w.landing===key&&winner===w.a)))continue;
-   // If a counterattack has reached home soil, do not bypass it for foreign land.
-   if(homePriority&&wcLegal(key,w)!==winner)continue;
-   wcSetOwner(key,winner,w);used++;frontier.add(key);for(let k of wcNeighbors(key)){frontier.add(k);if(wcOwner(k,w)===loser&&!seen.has(k))queue.push(k);}
-  }
-  w.frontier=[...frontier].filter(k=>wcOpposing(k,w));w.last.winner=used?winner:null;w.last.cells=used;
- }
- for(let c of [w.a,w.b]){let n=state.countries[c],off=w.postures[c]==='offensive';if(typeof milCombatCasualties==='function')milCombatCasualties(c,w,off);w.fatigue[c]=clamp(w.fatigue[c]+(off?.65:.35),0,100);n.morale=clamp(n.morale-(off?.18:.08),0,100);if(w.last.cells){let support=w.last.winner===c?.25:-.4;if(c===state.player)state.approval=clamp(state.approval+support,0,100);else if(n.ai)n.ai.approval=clamp(n.ai.approval+support,0,100);}}
- wcCityChanges(w,beforeCities);w.months++;w.support*=.94;
- if(w.last.cells)log(`${name(w.last.winner)} advanced ${w.last.cells} small sectors on the ${name(w.a)}–${name(w.b)} front${w.months<=3&&!w.scenario?' during the opening phase':''}.`,true);else if(state.turn%3===0)log(`The ${name(w.a)}–${name(w.b)} front held this month.`,true);
+ if(!w.active)return;w.last={winner:null,cells:0,cities:[]};
+ let moved=milAIAdvanceWar(w),entries=Object.entries(moved).sort((a,b)=>b[1]-a[1]),winner=entries[0]?.[0]||null;
+ if(entries.length>1&&entries[0][1]===entries[1][1])winner=null;
+ w.last.winner=winner;w.last.cells=Object.values(moved).reduce((sum,cells)=>sum+cells,0);
+ for(let c of[w.a,w.b]){let n=state.countries[c],off=w.postures[c]==='offensive';if(typeof milCombatCasualties==='function')milCombatCasualties(c,w,off);w.fatigue[c]=clamp(w.fatigue[c]+(off?.65:.35),0,100);n.morale=clamp(n.morale-(off?.18:.08),0,100);if(w.last.cells){let support=w.last.winner===c?.25:w.last.winner===null?0:-.4;if(c===state.player)state.approval=clamp(state.approval+support,0,100);else if(n.ai)n.ai.approval=clamp(n.ai.approval+support,0,100);}}
+ w.months++;w.support*=.94;
+ if(w.last.cells)log('Divisions changed control of '+w.last.cells+' cells along the '+name(w.a)+'–'+name(w.b)+' front.',true);else if(state.turn%3===0)log('The '+name(w.a)+'–'+name(w.b)+' front held; movement requires division orders.',true);
  if(w.revoltId)resResolveRevolt(w);else if(w.liberation)resResolveExileWar(w);else wcCapitulation(w);
 }
 function wcCapitulation(w){
@@ -203,6 +190,6 @@ function wcTerritoryStats(w){
 function wcPercent(value){return value>0&&value<.01?'<0.01%':value.toFixed(value<1?2:1)+'%';}
 function wcTerritorySummary(w){let t=wcTerritoryStats(w),mine=[w.a,w.b].includes(state.player),rows=[];if(mine){let other=state.player===w.a?w.b:w.a;rows=[['Taken from '+name(other),state.player===w.a?t.aHoldsB:t.bHoldsA],['Lost to '+name(other),state.player===w.a?t.bHoldsA:t.aHoldsB]];}else rows=[[name(w.b)+' held by '+name(w.a),t.aHoldsB],[name(w.a)+' held by '+name(w.b),t.bHoldsA]];return rows.map(([label,value])=>'<div class="row"><small>'+label+'</small><b>'+wcPercent(value)+'</b></div>').join('')+'<p class="note">Net current control, relative to each country’s original area. Recaptures reduce these totals.</p>';}
 
-function wcCard(w){let mine=[w.a,w.b].includes(state.player),last=w.last;return `<div class="card"><b>${name(w.a)} ↔ ${name(w.b)}</b><p>${w.active?'Active shared front':'Ceasefire'} · ${w.months} ${w.months===1?'month':'months'}</p>${wcTerritorySummary(w)}<p>${last.winner?`${name(last.winner)} advanced ${last.cells} sectors last month.`:'The line of control is holding.'}</p>${!w.scenario&&w.months<3?`<p class="positive">${name(w.initiator)}: +25% opening initiative · ${3-w.months} turns left</p>`:''}<p>Morale: ${name(w.a)} ${Math.round(state.countries[w.a].morale)}% · ${name(w.b)} ${Math.round(state.countries[w.b].morale)}%</p>${mine&&w.active?`<label class="row">Front posture<select aria-label="Campaign posture" data-war-posture="${w.id}">${['balanced','offensive','defensive'].map(p=>`<option ${w.postures[state.player]===p?'selected':''}>${p}</option>`).join('')}</select></label>`:''}<p class="note">Small shared hex sectors. Cities with 1%+ of their home population affect morale: +2 at 1%, +4 at 2%, +7 at 5%; capitals +10. Ceasefires preserve control.</p></div>`;}
+function wcCard(w){let mine=[w.a,w.b].includes(state.player),last=w.last;return `<div class="card"><b>${name(w.a)} ↔ ${name(w.b)}</b><p>${w.active?'Active shared front':'Ceasefire'} · ${w.months} ${w.months===1?'month':'months'}</p>${wcTerritorySummary(w)}<p>${last.cells?`${last.cells} cells changed after division movement last month.`:'The line of control is holding; territory changes only through division orders.'}</p>${!w.scenario&&w.months<3?`<p class="positive">${name(w.initiator)}: +25% opening initiative · ${3-w.months} turns left</p>`:''}<p>Morale: ${name(w.a)} ${Math.round(state.countries[w.a].morale)}% · ${name(w.b)} ${Math.round(state.countries[w.b].morale)}%</p>${mine&&w.active?`<label class="row">Front posture<select aria-label="Campaign posture" data-war-posture="${w.id}">${['balanced','offensive','defensive'].map(p=>`<option ${w.postures[state.player]===p?'selected':''}>${p}</option>`).join('')}</select></label>`:''}<p class="note">Small shared hex sectors. Cities with 1%+ of their home population affect morale: +2 at 1%, +4 at 2%, +7 at 5%; capitals +10. Ceasefires preserve control.</p></div>`;}
 function wcPeace(w){if(!w?.active)return false;let other=state.player===w.a?w.b:w.a;if(w.months<6&&w.fatigue[other]<15){notify('Ceasefire rejected. The opponent still expects military gains.');return true;}w.active=false;log(`Ceasefire agreed between ${name(w.a)} and ${name(w.b)}. The current line of control is frozen.`,true);return true;}
 
