@@ -222,6 +222,19 @@ function milPrepareWar(w){
   let units=milDivisionEntries(n).filter(x=>x.division.deployment!=='reserve'),positions=w.scenario?milSpreadFront(front,units.length):[];
   for(let i=0;i<units.length;i++){let d=units[i].division;d.deployment=w.id;d.arrivalTurn=state.turn;if(positions[i])d.location=positions[i];}
  }
+ if(w.scenario)w.divisionSpreadVersion=1;
+}
+function milMigrateScenarioSpread(w){
+ if(!w?.scenario||w.divisionSpreadVersion===1)return;
+ for(let c of[w.a,w.b]){
+  let n=state.countries[c];if(!n?.military)continue;milEnsureCountry(n);
+  let units=milDivisionEntries(n).filter(x=>x.division.deployment===w.id&&x.division.lastMoveTurn<0&&x.division.lastDirectAttackTurn<0);
+  if(!units.length)continue;
+  let ids=new Set(units.map(x=>x.division.id)),occupied=new Set(milDivisionEntries(n).filter(x=>x.division.deployment===w.id&&!ids.has(x.division.id)).map(x=>x.division.location).filter(Boolean));
+  let front=(w.frontier||[]).filter(key=>wcRoot(wcOwner(key,w))===c&&!occupied.has(key)),positions=milSpreadFront(front,units.length);
+  for(let i=0;i<units.length;i++)if(positions[i])units[i].division.location=positions[i];
+ }
+ w.divisionSpreadVersion=1;
 }
 function milAutoDeploy(c){
  let n=state.countries[c];if(!n)return;milEnsureCountry(n);let wars=milActiveWars(c),activeIds=new Set(wars.map(w=>w.id)),homes=milHomeKeys(n,Math.max(1,milDivisions(n).length)),index=0;
