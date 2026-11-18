@@ -201,9 +201,26 @@ function milDeployToWar(n,w,targetPercent=.65,immediate=false){
  milEnsureCountry(n);let entries=milDivisionEntries(n),assigned=entries.filter(x=>x.division.deployment===w.id).reduce((sum,x)=>sum+x.division.personnel,0),target=milRawPersonnel(n)*targetPercent;
  for(let{division:d}of entries){if(assigned>=target)break;if(d.deployment==='home'){d.deployment=w.id;d.arrivalTurn=immediate?state.turn:state.turn+1;assigned+=d.personnel;}}
 }
+function milSpreadFront(keys,count){
+ let cells=[...new Set(keys)].sort().map(key=>{let[q,r]=key.split(',').map(Number);return{key,q,r};});
+ count=Math.max(0,Math.floor(count));if(!cells.length||!count)return[];
+ let limit=Math.min(cells.length,count),selected=new Set(),chosen=[],nearest=Array(cells.length).fill(Infinity);
+ let centerQ=cells.reduce((sum,p)=>sum+p.q,0)/cells.length,centerR=cells.reduce((sum,p)=>sum+p.r,0);
+ for(let step=0;step<limit;step++){
+  let best=-1;
+  if(step===0){let bestDistance=Infinity;for(let i=0;i<cells.length;i++){let p=cells[i],dq=p.q-centerQ,dr=p.r-centerR,d=Math.max(Math.abs(dq),Math.abs(dr),Math.abs(dq+dr));if(d<bestDistance){bestDistance=d;best=i;}}}
+  else for(let i=0;i<cells.length;i++)if(!selected.has(i)&&(best<0||nearest[i]>nearest[best]||(nearest[i]===nearest[best]&&cells[i].key<cells[best].key)))best=i;
+  selected.add(best);chosen.push(best);let p=cells[best];
+  for(let i=0;i<cells.length;i++){let q=cells[i],dq=q.q-p.q,dr=q.r-p.r,d=Math.max(Math.abs(dq),Math.abs(dr),Math.abs(dq+dr));nearest[i]=Math.min(nearest[i],d);}
+ }
+ return Array.from({length:count},(_,i)=>cells[chosen[i%chosen.length]].key);
+}
 function milPrepareWar(w){
- for(let c of[w.a,w.b]){let n=state.countries[c];if(!n?.military)continue;milEnsureCountry(n);let front=(w.frontier||[]).filter(key=>wcRoot(wcOwner(key,w))===c).sort((a,b)=>{let x=wcPoint(a),y=wcPoint(b);return x[0]-y[0]||x[1]-y[1];}),i=0;
-  for(let{division:d}of milDivisionEntries(n))if(d.deployment!=='reserve'){d.deployment=w.id;d.arrivalTurn=state.turn;if(w.scenario&&front.length){let p=wcPoint(front[i%front.length]);d.location=wcKey(...p);i++;}}
+ for(let c of[w.a,w.b]){
+  let n=state.countries[c];if(!n?.military)continue;milEnsureCountry(n);
+  let front=(w.frontier||[]).filter(key=>wcRoot(wcOwner(key,w))===c);
+  let units=milDivisionEntries(n).filter(x=>x.division.deployment!=='reserve'),positions=w.scenario?milSpreadFront(front,units.length):[];
+  for(let i=0;i<units.length;i++){let d=units[i].division;d.deployment=w.id;d.arrivalTurn=state.turn;if(positions[i])d.location=positions[i];}
  }
 }
 function milAutoDeploy(c){
