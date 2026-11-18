@@ -88,8 +88,8 @@ function simAIBudget(c){
  const n=state.countries[c],ai=n.ai,e=economy(n),debtRatio=n.debt/Math.max(1,n.gdp),taxPlatform=polGovernmentPosition(c,'tax');
  const deficit=e.net<0||debtRatio>.85,action=deficit&&n.tax<42?'bill-tax-up':!deficit&&e.net>n.gdp*.01&&n.tax>33&&taxPlatform<.42?'bill-tax-down':null;
  if(action){let q=polQuote(c,action);if(q.ok&&q.canAfford){polAction(c,action);return;}}
- if(deficit&&n.infra>2){n.infra--;simRecord(c,'Reduced infrastructure allocations to contain the deficit.');return;}
- if(!deficit&&e.net>n.gdp*.01&&n.infra<10&&ai.focus==='growth'){n.infra++;simRecord(c,'Expanded infrastructure allocations within the budget surplus.');return;}
+ if(deficit&&n.infra>2){let q=polBudgetQuote(c,{tax:n.tax,health:n.health,education:n.education,defense:n.defense,infra:n.infra-1});if(q.ok&&q.canAfford)polSubmitBudget(c,q.proposal);else simRecord(c,'Could not cut infrastructure without a supported parliamentary budget.');return;}
+ if(!deficit&&e.net>n.gdp*.01&&n.infra<10&&ai.focus==='growth'){let q=polBudgetQuote(c,{tax:n.tax,health:n.health,education:n.education,defense:n.defense,infra:n.infra+1});if(q.ok&&q.canAfford)polSubmitBudget(c,q.proposal);else simRecord(c,'Could not raise infrastructure without a supported parliamentary budget.');return;}
  simRecord(c,'Kept current allocations; available legislative support or reserves were insufficient for a larger adjustment.');
 }
 function simDecision(c){
