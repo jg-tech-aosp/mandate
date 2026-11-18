@@ -171,11 +171,24 @@ function resMakeIndependent(r,group,zone,w){
  resFinishRevolt(r,w,'independent');state.independentRegions[r.zoneId]=r.actor;
  let actor=resActor(r.actor,group,true);actor.independent=true;actor.revolt=false;actor.disbanded=false;actor.displayName=group.name;actor.owner=r.actor;
  actor.ai??={...simPersonality(r.actor),approval:54,legitimacy:52,election:state.turn+48,term:1,lastAction:'A new independent government was established.',lastTurn:state.turn,decisions:0,history:[],politicalPower:0,politics:{termMonths:48,mediaLevel:0,supremeRule:false}};
- resFeature(r.actor,zone);
- if(zone.featureCode)resIndependentSourceOwners.set(zone.source||zone.featureCode,r.actor);else for(let cell of resCells(group.id,r.country))state.titles[cell.key]=r.actor;
+ resFeature(r.actor,zone);let inheritedDivisions=0;
+ if(zone.featureCode){
+  let source=zone.source||zone.featureCode,feature=world[zone.featureCode]?.feature,sourceNation=state.countries[source];
+  if(feature)for(let key of Object.keys(state.control||[])){if(wcLegal(key)!==source||!inside(wcPoint(key),feature))continue;if(state.titles?.[key]&&state.titles[key]!==source)continue;delete state.control[key];}
+  if(sourceNation&&sourceNation!==actor){
+   milEnsureCountry(sourceNation);
+   if(source===state.player){for(let d of milDivisions(sourceNation)){d.deployment='reserve';d.location=null;d.lastMoveTurn=state.turn;}milSyncCountry(sourceNation);}
+   else{
+    milEnsureCountry(actor);let formations=sourceNation.military.formations||[];
+    for(let formation of formations){formation.deployment='home';formation.arrivalTurn=state.turn;for(let d of formation.divisions||[]){let home=!!(feature&&d.location&&wcLegal(d.location)===source&&inside(wcPoint(d.location),feature));d.deployment=home?'home':'reserve';if(!home)d.location=null;d.arrivalTurn=state.turn;d.lastMoveTurn=state.turn;d.lastDirectAttackTurn=-1;}}
+    inheritedDivisions=formations.reduce((sum,f)=>sum+(f.divisions||[]).length,0);actor.military.formations.push(...formations);sourceNation.military.formations=[];sourceNation.owner=actor.code;sourceNation.disbanded=true;delete sourceNation.exile;milSyncCountry(sourceNation);milSyncCountry(actor);
+   }
+  }
+  resIndependentSourceOwners.set(source,r.actor);
+ }else for(let cell of resCells(group.id,r.country))state.titles[cell.key]=r.actor;
  state.titleRevision=(state.titleRevision||0)+1;state.regionDissatisfaction[r.zoneId]=32;
  if(typeof ptInvalidateBorders==='function')ptInvalidateBorders();resRegisterIndependent(r.actor,group,zone);
- log(group.name+' communities secured independence from '+name(r.country)+'.',true);
+ log(group.name+' communities secured independence from '+name(r.country)+(zone.featureCode?'. The former homeland is now under the new state.':'')+(inheritedDivisions?' '+inheritedDivisions+' former national divisions joined its army.':''),true);
 }
 function resGrantAutonomyInternal(r,group,zone,w){resFinishRevolt(r,w,'autonomy');let n=state.countries[r.country];n.autonomousRegions??=[];if(!n.autonomousRegions.includes(group.id))n.autonomousRegions.push(group.id);state.regionDissatisfaction[r.zoneId]=25;log(name(r.country)+' granted regional autonomy to '+group.name+' communities after the civil war.',true);}
 function resChangeGovernment(r,group,zone,w){resFinishRevolt(r,w,'government-change');if(r.country===state.player){state.approval=35;state.legitimacy=28;state.politicalPower=0;state.election=state.turn+12;}else{let ai=state.countries[r.country].ai;if(ai){ai.approval=55;ai.legitimacy=35;ai.politics.supremeRule=false;ai.politics.mediaLevel=0;ai.agenda='A new government after civil war.';}}state.regionDissatisfaction[r.zoneId]=30;log('A government crisis in '+name(r.country)+' replaced the ruling administration after rebels captured the capital.',true);}
@@ -195,4 +208,5 @@ function resMonthly(){
 }
 function resDraw(){if(!state||$('#layer').value!=='dissatisfaction')return;ctx.save();for(let group of RES_GROUPS)for(let zone of group.zones){for(let cell of resCells(group.id,zone.country)){let value=resCellValue(zone,cell);if(value<18)continue;let p=screen(...wcPoint(cell.key));if(p[0]<-12||p[0]>W+12||p[1]<-12||p[1]>H+12)continue;ctx.fillStyle='rgba(222,83,70,'+(.08+value/100*.48)+')';ctx.beginPath();wcHexPath(cell.key);ctx.fill();}}for(let city of wcCities()){let c=city.home,value=state.civicDissatisfaction[c]||0;if(value<25)continue;let p=screen(...city.point);if(p[0]<-12||p[0]>W+12||p[1]<-12||p[1]>H+12)continue;ctx.fillStyle='rgba(222,83,70,'+(.08+value/100*.35)+')';ctx.beginPath();wcHexPath(city.key);ctx.fill();}ctx.restore();}
 document.addEventListener('change',resSetPolicyUI);
+
 
