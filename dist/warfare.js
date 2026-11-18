@@ -2,7 +2,7 @@
 // One exclusive controller per small hex. Armies move the existing shared front.
 const WC_RADIUS=.016,WC_WIDTH=Math.sqrt(3)*WC_RADIUS*1.5,WC_HEIGHT=1.5*WC_RADIUS;
 const WC_DIRS=[[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
-let wcLegalCache=new Map(),wcShapeCache=null,wcCityCache=null;
+let wcLegalCache=new Map(),wcShapeCache=null,wcCityCache=null,wcOccupationPolygons=null;
 function wcPoint(key){let [q,r]=key.split(',').map(Number);return[WC_WIDTH*(q+r/2),WC_HEIGHT*r];}
 function wcKey(lon,lat){let rf=lat/WC_HEIGHT,qf=lon/WC_WIDTH-rf/2,sf=-qf-rf,q=Math.round(qf),r=Math.round(rf),s=Math.round(sf),dq=Math.abs(q-qf),dr=Math.abs(r-rf),ds=Math.abs(s-sf);if(dq>dr&&dq>ds)q=-r-s;else if(dr>ds)r=-q-s;return q+','+r;}
 function wcNeighbors(key){let [q,r]=key.split(',').map(Number);return WC_DIRS.map(([dq,dr])=>(q+dq)+','+(r+dr));}
@@ -18,9 +18,21 @@ function wcBase(key,w){
  let geographic=wcLegal(key,w),title=state.titles?.[key],independent=!title&&typeof resIndependentOwner==='function'?resIndependentOwner(key):null,c=title||independent||geographic;if(!c)return null;
  if(!title&&!independent&&state.countries[geographic]?.exile?.occupier)return wcRoot(state.countries[geographic].exile.occupier);
  let owner=wcRoot(c);if(owner!==c)return owner;
- if(c==='UA'&&state.mode==='control'&&occupationData&&inside(wcPoint(key),occupationData))return'RU';return c;
+ if(c==='UA'&&state.mode==='control'&&occupationData&&wcOccupiedCell(key))return'RU';return c;
 }
 function wcOwner(key,w){return wcRoot(state.control?.[key]||wcBase(key,w));}
+function wcInsideOccupation(p){
+ if(!occupationData)return false;
+ wcOccupationPolygons??=rings(occupationData).map(poly=>({poly,b:wcBounds(poly[0])}));
+ for(let{poly,b}of wcOccupationPolygons)if(wcInBounds(p,b)&&insideRing(p,poly[0])&&!poly.slice(1).some(r=>insideRing(p,r)))return true;
+ return false;
+}
+function wcOccupiedCell(key){
+ let center=wcPoint(key),votes=0;
+ if(wcContains(center,'UA')&&wcInsideOccupation(center))votes++;
+ for(let i=0;i<6;i++){let angle=(60*i+30)*Math.PI/180,p=[center[0]+WC_RADIUS*1.5*.65*Math.cos(angle),center[1]+WC_RADIUS*.65*Math.sin(angle)];if(wcContains(p,'UA')&&wcInsideOccupation(p))votes++;}
+ return votes>=4;
+}
 function wcSetOwner(key,c,w){if(c===wcBase(key,w))delete state.control[key];else state.control[key]=c;}
 function wcFind(a,b,includePeace=false){return state.wars.find(w=>w.shared&&[w.a,w.b].includes(a)&&[w.a,w.b].includes(b)&&a!==b&&(includePeace||w.active));}
 function wcUkraine(){return state.wars.find(w=>w.shared&&w.scenario);}
@@ -159,7 +171,7 @@ function wcScenarioGrid(){
  let bounds=wcBounds(rings(occupationData).flatMap(p=>p[0])),keys=new Set();
  for(let r=Math.floor(bounds[1]/WC_HEIGHT)-1;r<=Math.ceil(bounds[3]/WC_HEIGHT)+1;r++){
   let minQ=Math.floor(bounds[0]/WC_WIDTH-r/2)-1,maxQ=Math.ceil(bounds[2]/WC_WIDTH-r/2)+1;
-  for(let q=minQ;q<=maxQ;q++){let key=q+','+r,p=wcPoint(key);if(inside(p,occupationData)&&wcLegal(key,{a:'UA',b:'RU'})==='UA')keys.add(key);}
+  for(let q=minQ;q<=maxQ;q++){let key=q+','+r;if(wcLegal(key,{a:'UA',b:'RU'})==='UA'&&wcOccupiedCell(key))keys.add(key);}
  }
  return wcScenarioGridCache={keys,loops:wcGridOutline(keys)};
 }
