@@ -100,3 +100,4 @@
 .unitMarker b{font-size:11px}
 @media(max-width:650px){.unitMarker{min-width:33px;height:25px;padding:3px 5px;gap:4px;font-size:9px}.unitCode{font-size:8px}.unitMarker b{font-size:10px}}
 .mapTop,.mapLegend,.zoom,.timeControls,.mapBottom{z-index:4}
+.unitMarker.selected{outline:2px solid #eff5e7;outline-offset:1px;z-index:5}
