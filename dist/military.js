@@ -5,6 +5,7 @@
 const MILITARY_SCHEMA=2;
 const MIL_MAX_MOVE=20;
 const MIL_DIVISION_SIZE=10;
+const MIL_DIVISION_MAX=20;
 const MIL_EQUIPMENT_COST=.001;
 const MIL_RECRUIT_CASH=.004;
 const MIL_SUPPLY_RATE=.0000016;
@@ -77,20 +78,35 @@ function milQuoteRecruit(c){
  if((n.treasury||0)+1e-9<cash)return{ok:false,reason:'Treasury reserves cannot cover recruitment and procurement.',personnel,equipment,cash};
  return{ok:true,reason:'',personnel,equipment,cash};
 }
+function milQuoteReinforce(c,id){
+ let n=typeof c==='string'?state.countries[c]:c;milEnsureCountry(n);let entry=milFindDivision(n,id);if(!entry)return{ok:false,reason:'Division not found.'};let d=entry.division,personnel=Math.min(Math.max(0,MIL_DIVISION_MAX-d.personnel),milCapacity(n)-milRawPersonnel(n));
+ let equipment=(n.gdp||1)*MIL_EQUIPMENT_COST*(personnel/MIL_DIVISION_SIZE),cash=(n.gdp||1)*MIL_RECRUIT_CASH*(personnel/MIL_DIVISION_SIZE);
+ if(personnel<.1)return{ok:false,reason:d.personnel>=MIL_DIVISION_MAX?'Division is already at its 20k size limit.':'No trained manpower reserve is available.',personnel:0,equipment:0,cash:0};
+ if((n.economy?.inventory?.military||0)+1e-9<equipment)return{ok:false,reason:'Military equipment stocks are too low.',personnel,equipment,cash};
+ if((n.treasury||0)+1e-9<cash)return{ok:false,reason:'Treasury reserves cannot cover reinforcement.',personnel,equipment,cash};
+ return{ok:true,reason:'',personnel,equipment,cash};
+}
+function milReinforce(c,id){
+ let n=typeof c==='string'?state.countries[c]:c,quote=milQuoteReinforce(n,id);if(!quote.ok)return quote;let d=milFindDivision(n,id).division,old=d.personnel,total=old+quote.personnel;
+ n.treasury-=quote.cash;n.economy.inventory.military=Math.max(0,n.economy.inventory.military-quote.equipment);
+ d.equipment=milClamp((old*d.equipment+quote.personnel)/total,0,1);d.readiness=milClamp((old*d.readiness+quote.personnel*65)/total,0,100);d.supply=milClamp((old*d.supply+quote.personnel)/total,0,1);d.personnel=total;milSyncCountry(n);return{...quote,ok:true,division:id};
+}
+function milNextDivisionId(n){let ids=new Set(milDivisions(n).map(d=>d.id)),i=1;while(ids.has(n.code+'-div-'+i))i++;return n.code+'-div-'+i;}
 function milRecruit(c){
  let n=typeof c==='string'?state.countries[c]:c,quote=milQuoteRecruit(n);if(!quote.ok)return quote;
  n.treasury-=quote.cash;n.economy.inventory.military=Math.max(0,n.economy.inventory.military-quote.equipment);
- let id=n.code+'-div-'+(n.military.divisionCount+1),f={id:n.code+'-formation-'+(n.military.formations.length+1),name:'Reserve Division '+(n.military.divisionCount+1),deployment:'home',arrivalTurn:0,divisions:[]};
+ let id=milNextDivisionId(n),number=Number(id.split('-div-').pop()),f={id:n.code+'-formation-'+(n.military.formations.length+1),name:'Reserve Division '+number,deployment:'home',arrivalTurn:0,divisions:[]};
  f.divisions.push({id,personnel:quote.personnel,equipment:1,readiness:65,supply:1,createdTurn:state.turn,deployment:'reserve',location:null,lastMoveTurn:-1});n.military.formations.push(f);
  n.military.lastRecruit={turn:state.turn,personnel:quote.personnel,equipment:quote.equipment,cash:quote.cash};milSyncCountry(n);return{...quote,ok:true,division:id};
 }
-function milTrain(c){
- let n=typeof c==='string'?state.countries[c]:c;milEnsureCountry(n);let cost=(n.gdp||1)*.0015;
- if(!milDivisions(n).length)return{ok:false,reason:'There are no formations to train.'};
- if(n.treasury<cost)return{ok:false,reason:'Treasury reserves cannot cover the exercise.'};
+function milTrainingCost(n,d){return(n.gdp||1)*.0015*Math.max(0,(d?.personnel||0)/MIL_DIVISION_SIZE);}
+function milTrain(c,id=null){
+ let n=typeof c==='string'?state.countries[c]:c;milEnsureCountry(n);let entry=id?milFindDivision(n,id):null,divisions=id?(entry?[entry.division]:[]):milDivisions(n);
+ if(id&&!entry)return{ok:false,reason:'Division not found.'};if(!divisions.length)return{ok:false,reason:'There are no divisions to train.'};divisions=divisions.filter(d=>d.readiness<100);if(!divisions.length)return{ok:false,reason:id?'This division is already fully trained.':'All divisions are already fully trained.'};
+ let cost=divisions.reduce((sum,d)=>sum+milTrainingCost(n,d),0);if(n.treasury<cost)return{ok:false,reason:'Treasury reserves cannot cover this training.'};
  let supplied=milClamp(n.military.lastMonth?.supplyRatio??1,0,1);if(supplied<.25)return{ok:false,reason:'Supply shortages prevent a useful exercise.'};
- n.treasury-=cost;let gain=4*supplied;for(let d of milDivisions(n))d.readiness=milClamp(d.readiness+gain,0,100);
- milSyncCountry(n);return{ok:true,cost,gain};
+ n.treasury-=cost;let gain=4*supplied;for(let d of divisions)d.readiness=milClamp(d.readiness+gain,0,100);
+ milSyncCountry(n);return{ok:true,cost,gain,divisions:divisions.length,division:id||null};
 }
 function milDeliverAidEquipment(c,w){
  let n=typeof c==='string'?state.countries[c]:c;milEnsureCountry(n);let goods=(n.gdp||1)*.00008;
@@ -133,6 +149,13 @@ function milReachableKeys(c,id){
 function milWarForMove(n,d,target,hint){
  let war=hint?state.wars.find(w=>w.id===hint&&w.active):state.wars.find(w=>w.id===d.deployment&&w.active);if(war)return war;
  let legal=wcRoot(wcLegal(target));return milActiveWars(n.code).find(w=>[w.a,w.b].includes(legal))||null;
+}
+function milCanMergeDivisions(c,sourceId,targetId){
+ let n=typeof c==='string'?state.countries[c]:c;if(!n)return{ok:false,reason:'Country not found.'};let source=milFindDivision(n,sourceId),target=milFindDivision(n,targetId);if(!source||!target)return{ok:false,reason:'Division not found.'};if(sourceId===targetId)return{ok:false,reason:'Choose two different divisions.'};let a=source.division,b=target.division;if(a.deployment==='reserve'||b.deployment==='reserve'||!a.location||!b.location)return{ok:false,reason:'Both divisions must be deployed on the map.'};if(a.deployment!=='home'&&b.deployment!=='home'&&a.deployment!==b.deployment)return{ok:false,reason:'Divisions assigned to different active wars cannot merge.'};if(a.personnel+b.personnel>MIL_DIVISION_MAX+1e-9)return{ok:false,reason:'The merged division would exceed the 20k size limit.'};return{ok:true,n,source,target};
+}
+function milMergeDivisions(c,sourceId,targetId){
+ let check=milCanMergeDivisions(c,sourceId,targetId);if(!check.ok)return check;let{n,source,target}=check,a=source.division,b=target.division;if(a.location!==b.location)return{ok:false,reason:'Move both divisions onto the same map cell before merging.'};let oldA=a.personnel,oldB=b.personnel,total=oldA+oldB;
+ b.equipment=milClamp((oldA*a.equipment+oldB*b.equipment)/total,0,1);b.readiness=milClamp((oldA*a.readiness+oldB*b.readiness)/total,0,100);b.supply=milClamp((oldA*a.supply+oldB*b.supply)/total,0,1);b.personnel=total;b.deployment=b.deployment==='home'?a.deployment:b.deployment;b.arrivalTurn=Math.max(a.arrivalTurn||0,b.arrivalTurn||0);b.lastMoveTurn=Math.max(a.lastMoveTurn??-1,b.lastMoveTurn??-1);source.formation.divisions=source.formation.divisions.filter(d=>d.id!==sourceId);milSyncCountry(n);return{ok:true,id:targetId,personnel:total};
 }
 function milPlaceDivision(c,id,key){
  let entry=milFindDivision(c,id);if(!entry)return{ok:false,reason:'Division not found.'};let{n,division:d}=entry;
@@ -219,13 +242,15 @@ function milPanel(n){
  milEnsureCountry(n);let m=n.military,divisions=milDivisions(n),personnel=milRawPersonnel(n),quote=milQuoteRecruit(n),wars=milActiveWars(n.code),last=m.lastMonth||{};
  let html='<div class="card"><b>Military readiness and logistics</b><div class="row"><span>Active strength index</span><b>'+n.force.toFixed(1)+'</b></div><div class="row"><span>Personnel</span><b>'+personnel.toFixed(1)+'k · '+divisions.length+' divisions</b></div><div class="row"><span>Available manpower</span><b>'+m.availableManpower.toFixed(1)+'k</b></div><div class="row"><span>Readiness</span><b>'+n.ready.toFixed(0)+'%</b></div><div class="row"><span>Supply delivered</span><b>'+Math.round((last.supplyRatio??1)*100)+'%</b></div><div class="row"><span>Monthly military maintenance</span><b>'+money(last.maintenance||n.economy.maintenance||0)+'</b></div><div class="row"><span>Mobilization</span><b>'+(n.mobilized?'Active · economic and approval cost':'Standby')+'</b></div></div>';
  html+='<button class="wide" data-action="recruit" '+(quote.ok?'':'disabled')+'>'+(quote.ok?'Recruit division · '+money(quote.cash)+' plus '+money(quote.equipment)+' equipment':'Recruit unavailable · '+quote.reason)+'</button>';
- html+=actionButton('train','Train divisions · '+money(n.gdp*.0015))+actionButton('mobilize',n.mobilized?'Demobilize reserves':'Mobilize reserves')+'<div class="card"><b>Divisions</b>';
- let index=0;for(let{division:d}of milDivisionEntries(n)){index++;let owner=d.location?wcRoot(wcOwner(d.location,state.wars.find(w=>w.id===d.deployment))||wcLegal(d.location)):null,status=d.deployment==='reserve'?'Reserve':d.location?name(owner||n.code):'Unplaced',location=d.deployment==='reserve'?'Awaiting deployment':status+' · '+(d.location||'');
+ html+=actionButton('mobilize',n.mobilized?'Demobilize reserves':'Mobilize reserves')+'<div class="card"><b>Divisions</b>';
+ let index=0;for(let{division:d}of milDivisionEntries(n)){index++;let owner=d.location?wcRoot(wcOwner(d.location,state.wars.find(w=>w.id===d.deployment))||wcLegal(d.location)):null,status=d.deployment==='reserve'?'Reserve':d.location?name(owner||n.code):'Unplaced',location=d.deployment==='reserve'?'Awaiting deployment':status+' · '+(d.location||''),reinforce=milQuoteReinforce(n,d.id),trainingCost=milTrainingCost(n,d);
   html+='<div class="row"><span>Division '+index+' · '+d.personnel.toFixed(1)+'k</span><b>'+Math.round(d.readiness)+'% ready</b></div><div class="row"><small>'+location+'</small><small>'+Math.round(d.equipment*100)+'% equipment</small></div>';
+  html+='<button class="wide" data-action="milTrain|'+d.id+'" '+(d.readiness<100?'':'disabled')+'>Train this division · '+money(trainingCost)+'</button>';
+  html+='<button class="wide" data-action="milReinforce|'+d.id+'" '+(reinforce.ok?'':'disabled')+'>'+(reinforce.ok?'Add '+reinforce.personnel.toFixed(1)+'k troops · '+money(reinforce.cash)+' plus '+money(reinforce.equipment)+' equipment':'Reinforce unavailable · '+reinforce.reason)+'</button>';
   html+=d.deployment==='reserve'?actionButton('milPlace|'+d.id,'Deploy on map'):actionButton('milSelect|'+d.id,'Select to move');
  }
  if(!divisions.length)html+='<p>No formed units.</p>';
- html+='<p class="note">Recruitment spends treasury and military goods and uses available manpower. Select Deploy on map, then choose friendly territory. Select a division and click or drag it to a destination up to 20 connected cells away per month. During a war, divisions capture only the enemy cells they cross.</p></div>';
+ html+='<p class="note">Training is priced for each division and scales with its size. Reinforcements use available manpower, treasury and military goods; divisions can hold up to 20k troops. Deploy reserves on friendly land. Select or drag a division up to 20 connected cells per month. Drag one division onto another to merge after a confirmation; cancel to keep them separate. During war, divisions capture only the enemy cells they cross.</p></div>';
  html+=wars.length?'<h3>Active campaigns</h3>'+wars.map(w=>wcCard(w)).join(''):'<p class="note">No active fronts.</p>';return html;
 }
 function milCanInspectFullRoster(n){let viewer=state?.countries?.[state.player];return n.code===state.player||!!(viewer&&(n.allies?.includes(state.player)||viewer.allies?.includes(n.code)));}
