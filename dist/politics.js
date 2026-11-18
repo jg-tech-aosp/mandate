@@ -1,6 +1,6 @@
 'use strict';
 
-const POLITICS_SCHEMA=4;
+const POLITICS_SCHEMA=5;
 const POLITICS_BASE_TERM=48,POLITICS_MIN_TERM=24,POLITICS_MAX_TERM=96,POLITICS_STEP=12,POLITICS_COST=20;
 const POLITICS_MEDIA_DRIFT=.08,POLITICS_MEDIA_EVENT_SHIELD=.2,POLITICS_MEDIA_ELECTION_BONUS=2,POLITICS_SUPREME_ELECTION_BONUS=12;
 const POLITICS_SEATS=120;
@@ -75,8 +75,9 @@ function polEnsure(){
   p.regime=regime;
   polRecomputeRegime(c);
   if(!Object.keys(p.parliament.seatsByParty).length){polUpdatePolls(c,true);polAllocateSeats(c);}
-  if(!p.government||!Array.isArray(p.government.parties)||!p.government.parties.length)polFormGovernment(c);
+  if(!p.government||!Array.isArray(p.government.parties)||!p.government.parties.length)polFormGovernment(c,null,isPlayer?state.playerParty:null);
   else polRefreshGovernment(c);
+  if(isPlayer&&(!state.playerParty||!p.parties.some(x=>x.id===state.playerParty)))state.playerParty=p.government?.leader||p.parties[0]?.id||null;
   if(ai){
    for(let key of ['approval','legitimacy','politicalPower','election','term','politics']){try{delete ai[key]}catch{}}
    polAlias(ai,'approval',()=>p.approval,v=>{p.approval=polClamp(Number(v)||0,0,100);});
@@ -168,9 +169,14 @@ function polCoalitionCost(parties){
  let seats=parties.reduce((s,p)=>s+p.seats,0);
  return Math.max(0,seats-60)*.2+cohesion*9-parties[0].seats*.002;
 }
-function polFormGovernment(c,preserve=null){
+function polFormGovernment(c,preserve=null,preferredLeader=null){
  let p=polModel(c);if(!p)return;
  if(preserve?.length&&polSeatShare(c,preserve)>=50){p.government={leader:preserve.reduce((best,id)=>{let x=p.parties.find(t=>t.id===id);let b=p.parties.find(t=>t.id===best);return !b||(x?.seats||0)>b.seats?id:best;},null),parties:preserve.slice(),seatShare:polSeatShare(c,preserve),status:'majority',stability:55,formedTurn:state.turn};polRefreshGovernment(c);return p.government;}
+ if(preferredLeader&&p.parties.some(x=>x.id===preferredLeader)){
+  let leader=p.parties.find(x=>x.id===preferredLeader),rest=p.parties.filter(x=>x.id!==preferredLeader),best=null;
+  for(let mask=0;mask<(1<<rest.length);mask++){let group=[leader,...rest.filter((_,i)=>mask&(1<<i))];if(group.reduce((sum,x)=>sum+x.seats,0)<POLITICS_SEATS/2)continue;let cost=polCoalitionCost(group);if(!best||cost<best.cost)best={group,cost};}
+  let group=best?.group||[leader],ids=group.map(x=>x.id);p.government={leader:preferredLeader,parties:ids,seatShare:polSeatShare(c,ids),status:'majority',stability:55,formedTurn:state.turn};polRefreshGovernment(c);return p.government;
+ }
  let best=null,parties=p.parties;
  for(let mask=1;mask<(1<<parties.length);mask++){
   let group=parties.filter((_,i)=>mask&(1<<i)),seatCount=group.reduce((s,x)=>s+x.seats,0);if(seatCount<60)continue;
