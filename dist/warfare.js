@@ -67,7 +67,7 @@ function wcEnsureWorld(){
  }
  // A non-serialized convenience alias keeps the rest of the world AI using the same war object.
  let descriptor=Object.getOwnPropertyDescriptor(state,'front');if(!descriptor?.get){delete state.front;Object.defineProperty(state,'front',{enumerable:false,configurable:true,get:wcUkraine});}
- for(let w of state.wars){w.last??={winner:null,cells:0,cities:[]};w.capitalHolds??={};}
+ for(let w of state.wars){w.last??={winner:null,cells:0,cities:[]};w.capitalHolds??={};if(typeof milMigrateScenarioSpread==='function')milMigrateScenarioSpread(w);}
  wcCities();
 }
 function wcCityShare(country,population){return population/Math.max(1,(state?.countries[country]?.pop??profile[country]?.[1]??1)*1000000);}
