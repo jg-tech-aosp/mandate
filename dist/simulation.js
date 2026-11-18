@@ -21,6 +21,18 @@ function simRelation(a,b){let x=state.countries[a],y=state.countries[b];return x
 function simSetRelation(a,b,value){value=clamp(value,-100,100);state.countries[a].relations[b]=value;state.countries[b].relations[a]=value;}
 function simFrontPair(a,b){return !!state.front&&a!==b&&['RU','UA'].includes(a)&&['RU','UA'].includes(b);}
 function simAtWar(c,other){return state.wars.some(w=>w.active&&[w.a,w.b].includes(c)&&(!other||[w.a,w.b].includes(other)));}
+const SIM_DIPLOMACY_VISIT_RATE=.0025,SIM_DIPLOMACY_VISIT_GAIN=3,SIM_DIPLOMACY_VISIT_COOLDOWN=12;
+function simDiplomaticVisitQuote(c,target){
+ let n=state?.countries?.[c],other=state?.countries?.[target];if(!n||!other||c===target)return{ok:false,reason:'Choose another country.'};
+ n.diplomaticVisits??={};let cost=Math.max(0,n.gdp||0)*SIM_DIPLOMACY_VISIT_RATE,last=Number(n.diplomaticVisits[target]??-SIM_DIPLOMACY_VISIT_COOLDOWN),remaining=Math.max(0,SIM_DIPLOMACY_VISIT_COOLDOWN-(state.turn-last));
+ if(simAtWar(c,target))return{ok:false,reason:'Diplomatic visits are suspended during war.',cost,remaining};
+ if(n.sanctions?.includes(target)||other.sanctions?.includes(c))return{ok:false,reason:'Lift sanctions before arranging a diplomatic visit.',cost,remaining};
+ if(simRelation(c,target)>=100)return{ok:false,reason:'Relations are already at their maximum.',cost,remaining};
+ if(remaining>0)return{ok:false,reason:'Available again in '+remaining+' months.',cost,remaining};
+ if((n.treasury||0)+1e-9<cost)return{ok:false,reason:'Treasury reserves cannot cover the visit.',cost,remaining};
+ return{ok:true,cost,remaining:0,gain:SIM_DIPLOMACY_VISIT_GAIN};
+}
+function simConductDiplomaticVisit(c,target){let q=simDiplomaticVisitQuote(c,target);if(!q.ok)return q;let n=state.countries[c];n.treasury-=q.cost;n.diplomaticVisits[target]=state.turn;simSetRelation(c,target,simRelation(c,target)+q.gain);return{...q,ok:true,relation:simRelation(c,target)};}
 function simGrid(){
  if(simGridCache)return simGridCache;
  const radius=.045,wide=Math.sqrt(3)*radius*1.5,high=radius*1.5,cells=[],lookup=new Map(),initial=[];
@@ -62,7 +74,7 @@ function simDiplomacy(c){
  let pact=candidates.find(({b})=>simRelation(c,b)>=60&&!n.allies.includes(b)&&!simAtWar(c)&&!simAtWar(b));
  if(pact&&simThreat(c)>=.5&&ai.focus!=='neutrality'){let b=pact.b;if(b===state.player)simOffer(c,'alliance');else{n.allies.push(b);state.countries[b].allies.push(c);simRecord(c,`Signed a defensive pact with ${name(b)}.`,true);}return true;}
  let candidate=candidates.find(({b})=>!n.trades.includes(b));
- if(!candidate){let friends=Object.keys(state.countries).filter(b=>b!==c&&!ai.rivals.includes(b)&&!simAtWar(c,b)&&state.countries[b].owner===b);if(!friends.length)return false;let b=friends[Math.floor(simRandom()*friends.length)];simSetRelation(c,b,simRelation(c,b)+8);simRecord(c,`Opened diplomatic talks with ${name(b)}.`);return true;}let b=candidate.b;
+ if(!candidate){let friends=Object.keys(state.countries).filter(b=>b!==c&&!ai.rivals.includes(b)&&state.countries[b].owner===b&&simDiplomaticVisitQuote(c,b).ok);if(!friends.length)return false;let b=friends[Math.floor(simRandom()*friends.length)],visit=simConductDiplomaticVisit(c,b);if(!visit.ok)return false;simRecord(c,`Funded a diplomatic visit to ${name(b)}; relations improved by ${visit.gain}.`,true);return true;}let b=candidate.b;
  if(b===state.player){simOffer(c,'trade');return true;}
  n.trades.push(b);state.countries[b].trades.push(c);simSetRelation(c,b,simRelation(c,b)+4);simRecord(c,`Signed a trade agreement with ${name(b)}.`,true);return true;
 }
@@ -76,8 +88,8 @@ function simAIBudget(c){
  const n=state.countries[c],ai=n.ai,e=economy(n),debtRatio=n.debt/Math.max(1,n.gdp),taxPlatform=polGovernmentPosition(c,'tax');
  const deficit=e.net<0||debtRatio>.85,action=deficit&&n.tax<42?'bill-tax-up':!deficit&&e.net>n.gdp*.01&&n.tax>33&&taxPlatform<.42?'bill-tax-down':null;
  if(action){let q=polQuote(c,action);if(q.ok&&q.canAfford){polAction(c,action);return;}}
- if(deficit&&n.infra>2){n.infra--;simRecord(c,'Reduced infrastructure allocations to contain the deficit.');return;}
- if(!deficit&&e.net>n.gdp*.01&&n.infra<10&&ai.focus==='growth'){n.infra++;simRecord(c,'Expanded infrastructure allocations within the budget surplus.');return;}
+ if(deficit&&n.infra>2){let q=polBudgetQuote(c,{tax:n.tax,health:n.health,education:n.education,defense:n.defense,infra:n.infra-1});if(q.ok&&q.canAfford)polSubmitBudget(c,q.proposal);else simRecord(c,'Could not cut infrastructure without a supported parliamentary budget.');return;}
+ if(!deficit&&e.net>n.gdp*.01&&n.infra<10&&ai.focus==='growth'){let q=polBudgetQuote(c,{tax:n.tax,health:n.health,education:n.education,defense:n.defense,infra:n.infra+1});if(q.ok&&q.canAfford)polSubmitBudget(c,q.proposal);else simRecord(c,'Could not raise infrastructure without a supported parliamentary budget.');return;}
  simRecord(c,'Kept current allocations; available legislative support or reserves were insufficient for a larger adjustment.');
 }
 function simDecision(c){
@@ -100,7 +112,7 @@ function simDecision(c){
   simRecord(c,'Deferred recruitment: '+recruited.reason);return;
  }
  if(decision==='trade'&&simDiplomacy(c))return;
- if(simSpend(n,n.gdp*.002)){econFundInvestment(n,n.gdp*.002);ai.approval=clamp(ai.approval+1,0,100);simRecord(c,'Approved an infrastructure investment programme.');}else simRecord(c,'Prioritized reserve recovery and deferred new spending.');
+ let programme=econRunStimulus(n);if(programme.ok)simRecord(c,'Approved a national investment programme with treasury funding.');else simRecord(c,'Deferred the national investment programme: '+programme.reason);
 }
 function simAIWar(c){let n=state.countries[c],ai=n.ai;if(ai.risk<.8||state.turn<9||simAtWar(c)||state.wars.filter(w=>w.active).length>=2)return;
  for(let b of ai.rivals){if(ptTruce(c,b)||state.countries[c].overlord||!world[b]||allied(c,b)||state.countries[b].owner!==b||simFrontPair(c,b)||simRelation(c,b)>-65)continue;
