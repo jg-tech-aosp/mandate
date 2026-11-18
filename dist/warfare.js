@@ -2,7 +2,7 @@
 // One exclusive controller per small hex. Armies move the existing shared front.
 const WC_RADIUS=.016,WC_WIDTH=Math.sqrt(3)*WC_RADIUS*1.5,WC_HEIGHT=1.5*WC_RADIUS;
 const WC_DIRS=[[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
-let wcLegalCache=new Map(),wcShapeCache=null,wcCityCache=null,wcOccupationPolygons=null;
+let wcLegalCache=new Map(),wcShapeCache=null,wcCityCache=null,wcOccupationPolygons=null,wcCellSamplesCache=new Map(),wcUkraineSamplesCache=new Map();
 function wcPoint(key){let [q,r]=key.split(',').map(Number);return[WC_WIDTH*(q+r/2),WC_HEIGHT*r];}
 function wcKey(lon,lat){let rf=lat/WC_HEIGHT,qf=lon/WC_WIDTH-rf/2,sf=-qf-rf,q=Math.round(qf),r=Math.round(rf),s=Math.round(sf),dq=Math.abs(q-qf),dr=Math.abs(r-rf),ds=Math.abs(s-sf);if(dq>dr&&dq>ds)q=-r-s;else if(dr>ds)r=-q-s;return q+','+r;}
 function wcNeighbors(key){let [q,r]=key.split(',').map(Number);return WC_DIRS.map(([dq,dr])=>(q+dq)+','+(r+dr));}
@@ -12,7 +12,13 @@ function wcShapes(){if(!wcShapeCache){wcShapeCache={};for(let c in world)wcShape
 function wcContains(p,c){return wcShapes()[c]?.some(({poly,b})=>wcInBounds(p,b)&&insideRing(p,poly[0])&&!poly.slice(1).some(r=>insideRing(p,r)));}
 let wcMicroCells=null;
 function wcMicrostates(){if(wcMicroCells)return wcMicroCells;wcMicroCells=new Map();for(let c of ['VA','MC','SM','LI','AD']){if(!world[c])continue;let key=wcKey(...world[c].center),near=[key,...wcNeighbors(key)];if(!near.some(k=>wcContains(wcPoint(k),c)))wcMicroCells.set(key,c);}return wcMicroCells;}
-function wcLegal(key,w){let micro=wcMicrostates().get(key);if(micro)return micro;if(wcLegalCache.has(key))return wcLegalCache.get(key);let p=wcPoint(key),c=Object.keys(world).find(c=>wcContains(p,c))||null;wcLegalCache.set(key,c);return c;}
+function wcLegal(key,w){
+ let micro=wcMicrostates().get(key);if(micro)return micro;
+ let cacheKey=(state?.mode||mode||'legal')+'|'+key;if(wcLegalCache.has(cacheKey))return wcLegalCache.get(cacheKey);
+ let p=wcPoint(key),c=Object.keys(world).find(c=>wcContains(p,c))||null;
+ if(!c&&(state?.mode||mode)==='control'&&wcUkraineSamples(key).length>=4)c='UA';
+ wcLegalCache.set(cacheKey,c);return c;
+}
 function wcRoot(c){if(!state)return c;let seen=new Set();while(c&&state.countries[c]?.owner!==c&&!seen.has(c)){seen.add(c);c=state.countries[c]?.owner;}return c;}
 function wcBase(key,w){
  let geographic=wcLegal(key,w),title=state.titles?.[key],independent=!title&&typeof resIndependentOwner==='function'?resIndependentOwner(key):null,c=title||independent||geographic;if(!c)return null;
@@ -21,6 +27,16 @@ function wcBase(key,w){
  if(c==='UA'&&state.mode==='control'&&occupationData&&wcOccupiedCell(key))return'RU';return c;
 }
 function wcOwner(key,w){return wcRoot(state.control?.[key]||wcBase(key,w));}
+function wcCellSamples(key){
+ if(wcCellSamplesCache.has(key))return wcCellSamplesCache.get(key);
+ let center=wcPoint(key),samples=[center];
+ for(let i=0;i<6;i++){let angle=(60*i+30)*Math.PI/180;samples.push([center[0]+WC_RADIUS*1.5*.65*Math.cos(angle),center[1]+WC_RADIUS*.65*Math.sin(angle)]);}
+ wcCellSamplesCache.set(key,samples);return samples;
+}
+function wcUkraineSamples(key){
+ if(wcUkraineSamplesCache.has(key))return wcUkraineSamplesCache.get(key);
+ let samples=wcCellSamples(key).filter(p=>wcContains(p,'UA'));wcUkraineSamplesCache.set(key,samples);return samples;
+}
 function wcInsideOccupation(p){
  if(!occupationData)return false;
  wcOccupationPolygons??=rings(occupationData).map(poly=>({poly,b:wcBounds(poly[0])}));
@@ -28,10 +44,9 @@ function wcInsideOccupation(p){
  return false;
 }
 function wcOccupiedCell(key){
- let center=wcPoint(key),votes=0;
- if(wcContains(center,'UA')&&wcInsideOccupation(center))votes++;
- for(let i=0;i<6;i++){let angle=(60*i+30)*Math.PI/180,p=[center[0]+WC_RADIUS*1.5*.65*Math.cos(angle),center[1]+WC_RADIUS*.65*Math.sin(angle)];if(wcContains(p,'UA')&&wcInsideOccupation(p))votes++;}
- return votes>=4;
+ let samples=wcUkraineSamples(key);if(!samples.length)return false;
+ let occupied=samples.filter(wcInsideOccupation).length;
+ return occupied*2>samples.length;
 }
 function wcSetOwner(key,c,w){if(c===wcBase(key,w))delete state.control[key];else state.control[key]=c;}
 function wcFind(a,b,includePeace=false){return state.wars.find(w=>w.shared&&[w.a,w.b].includes(a)&&[w.a,w.b].includes(b)&&a!==b&&(includePeace||w.active));}
