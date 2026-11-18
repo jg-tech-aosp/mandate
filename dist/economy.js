@@ -3,6 +3,7 @@
 // National accounts use illustrative euro-bn flows. Industrial capacities,
 // demand, inventories, and trade all share those units.
 const ECONOMY_SCHEMA=1;
+const ECON_STIMULUS_RATE=.012,ECON_STIMULUS_COOLDOWN=12;
 const ECONOMY_GOODS=['food','energy','materials','manufacturing','military'];
 const ECONOMY_DEMAND={food:.10,energy:.08,materials:.10,manufacturing:.18,military:.015};
 const ECONOMY_CAPITAL_EFFICIENCY=.15;
@@ -26,7 +27,7 @@ function econEnsureCountry(n){
  e.inventory=e.inventory||Object.fromEntries(ECONOMY_GOODS.map(s=>[s,(n.gdp||1)*ECONOMY_DEMAND[s]*2/12]));
  for(let s of ECONOMY_GOODS)e.inventory[s]=Math.max(0,Number(e.inventory[s])||0);
  e.confidence=econClamp(Number.isFinite(e.confidence)?e.confidence:60,0,100);
- e.pendingInvestment=Math.max(0,Number(e.pendingInvestment)||0);
+ e.pendingInvestment=Math.max(0,Number(e.pendingInvestment)||0);e.lastStimulusTurn=Number.isFinite(e.lastStimulusTurn)?e.lastStimulusTurn:-ECON_STIMULUS_COOLDOWN;
  e.factories=Math.max(0,Number(e.capacity.manufacturing)||0);
  e.lastMonth=e.lastMonth||{production:0,imports:0,exports:0,shortage:0,investment:0,utilization:.9,importsBySector:{},exportsBySector:{}};
 }
@@ -47,6 +48,18 @@ function econFundInvestment(n,amount){
  n.economy.pendingInvestment+=value;
  n.economy.confidence=econClamp(n.economy.confidence+Math.min(2,value/Math.max(1,n.gdp)*100),0,100);
 }
+
+function econStimulusQuote(n){
+ econEnsureCountry(n);let cost=Math.max(0,n.gdp||0)*ECON_STIMULUS_RATE,last=n.economy.lastStimulusTurn,remaining=Math.max(0,ECON_STIMULUS_COOLDOWN-(state.turn-last));
+ if(n.politics?.government?.status==='caretaker')return{ok:false,reason:'A caretaker government cannot authorize a national investment programme.',cost,remaining};
+ if(remaining>0)return{ok:false,reason:'Available again in '+remaining+' months.',cost,remaining};
+ if((n.treasury||0)+1e-9<cost)return{ok:false,reason:'Treasury reserves cannot cover the programme.',cost,remaining};
+ return{ok:true,cost,remaining:0};
+}
+function econRunStimulus(n){
+ let q=econStimulusQuote(n);if(!q.ok)return q;n.treasury-=q.cost;n.economy.lastStimulusTurn=state.turn;econFundInvestment(n,q.cost);return{...q,ok:true};
+}
+
 function econSupply(n){
  let e=n.economy,capacity=e.capacity,utilization=econClamp(.88+(e.confidence-50)*.0015,.75,.98),output={};
  for(let s of [...ECONOMY_GOODS,'services'])output[s]=capacity[s]/12*utilization;
@@ -105,7 +118,7 @@ function econAdvanceAll(){
   let governmentStability=n.politics?.government?.stability??55;
   let approval=c===state.player?state.approval:(n.ai?.approval??58);
   let legitimacy=c===state.player?state.legitimacy:(n.ai?.legitimacy??60);
-  let confidenceDelta=(approval-55)*.012+(legitimacy-50)*.008+(governmentStability-50)*.015-shortage*1.4-receivedSanctions*.5-issuedSanctions*.15-(n.debt/oldGDP>1?.25:0);
+  let confidenceDelta=(approval-55)*.012+(legitimacy-50)*.008+(governmentStability-50)*.015+(20-(n.politics?.corruption??20))*.012-shortage*1.4-receivedSanctions*.5-issuedSanctions*.15-(n.debt/oldGDP>1?.25:0);
   e.confidence=econClamp(e.confidence+confidenceDelta,0,100);
   let publicInvestment=oldGDP*n.infra/100/12,privateInvestment=oldGDP*(.012*e.confidence/100)/12;
   let investment=publicInvestment+privateInvestment+e.pendingInvestment;

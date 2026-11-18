@@ -1,6 +1,6 @@
 'use strict';
 
-const POLITICS_SCHEMA=2;
+const POLITICS_SCHEMA=3;
 const POLITICS_BASE_TERM=48,POLITICS_MIN_TERM=24,POLITICS_MAX_TERM=96,POLITICS_STEP=12,POLITICS_COST=20;
 const POLITICS_MEDIA_DRIFT=.08,POLITICS_MEDIA_EVENT_SHIELD=.2,POLITICS_MEDIA_ELECTION_BONUS=2,POLITICS_SUPREME_ELECTION_BONUS=12;
 const POLITICS_SEATS=120;
@@ -19,6 +19,7 @@ const POLITICS_BILLS={
  'bill-defence-up':{id:'defence-up',label:'Increase defence allocation by 1 point',cost:14,axis:'security',yesWhen:'high',effect:'defence',delta:1},
  'bill-defence-down':{id:'defence-down',label:'Reduce defence allocation by 1 point',cost:14,axis:'security',yesWhen:'low',effect:'defence',delta:-1},
  'bill-rights':{id:'rights',label:'Pass a judicial independence and rights act',cost:18,axis:'liberty',yesWhen:'high',effect:'rights'},
+ 'bill-anticorruption':{id:'anticorruption',label:'Pass an independent anti-corruption enforcement act',cost:24,axis:'liberty',yesWhen:'high',effect:'corruption'},
  'bill-emergency':{id:'emergency',label:'Grant temporary emergency powers',cost:18,axis:'authority',yesWhen:'high',effect:'emergency'}
 };
 const POLITICS_AXES=['tax','welfare','security','liberty','authority'];
@@ -46,6 +47,7 @@ function polEnsure(){
  if(!state)return;
  let legacyPlayer={approval:state.approval,legitimacy:state.legitimacy,power:state.politicalPower,term:state.term,election:state.election,settings:state.politics};
  state.schemaVersion=Math.max(POLITICS_SCHEMA,Number(state.schemaVersion)||0);
+ state.snapElectionTerm=Math.max(0,Math.floor(polNumber(state.snapElectionTerm,0)));state.lastSnapTurn=Math.floor(polNumber(state.lastSnapTurn,-24));
  for(let c in state.countries){
   let n=state.countries[c],ai=n.ai||{},old=n.politics||{},isPlayer=c===state.player,oldSettings=isPlayer?legacyPlayer.settings:ai.politics;
   let regime=old.regime||((POLITICS_REGIMES.authoritarian.includes(c)||POLITICS_REGIMES.hybrid.includes(c)||POLITICS_REGIMES.democratic.includes(c))?(POLITICS_REGIMES.authoritarian.includes(c)?'authoritarian':POLITICS_REGIMES.hybrid.includes(c)?'hybrid':'democratic'):'democratic');
@@ -61,7 +63,8 @@ function polEnsure(){
   p.settings=settings;
   p.settings.termMonths=Math.round(polClamp(polNumber(p.settings.termMonths,POLITICS_BASE_TERM),POLITICS_MIN_TERM,POLITICS_MAX_TERM)/POLITICS_STEP)*POLITICS_STEP;
   p.settings.mediaLevel=Math.floor(polClamp(polNumber(p.settings.mediaLevel,0),0,3));p.settings.supremeRule=!!p.settings.supremeRule;
-  p.institutionBase=polClamp(polNumber(p.institutionBase,polRegimeBase(c)),0,100);p.rightsReforms=Math.max(0,Math.floor(polNumber(p.rightsReforms,0)));p.emergencyPowers=!!p.emergencyPowers;
+  p.institutionBase=polClamp(polNumber(p.institutionBase,polRegimeBase(c)),0,100);p.rightsReforms=Math.max(0,Math.floor(polNumber(p.rightsReforms,0)));p.emergencyPowers=!!p.emergencyPowers;p.corruption=polClamp(polNumber(p.corruption,regime==='authoritarian'?58:regime==='hybrid'?34:18),0,100);p.integrityReformTerm=Math.max(0,Math.floor(polNumber(p.integrityReformTerm,0)));p.campaignTerm=Math.max(0,Math.floor(polNumber(p.campaignTerm,0)));p.campaignElectionTurn=Math.max(-1,Math.floor(polNumber(p.campaignElectionTurn,-1)));
+ 
   p.parties=Array.isArray(p.parties)&&p.parties.length?p.parties:polInitialParties(c,regime);
   for(let party of p.parties){party.positions||={};for(let axis of POLITICS_AXES)party.positions[axis]=polClamp(polNumber(party.positions[axis],.5),0,1);party.poll=polClamp(polNumber(party.poll,25),0,100);party.seats=Math.max(0,Math.floor(polNumber(party.seats,0)));party.base=polNumber(party.base,25);}
   p.parliament=p.parliament&&typeof p.parliament==='object'?p.parliament:{totalSeats:POLITICS_SEATS,seatsByParty:{},elections:0,lastElectionTurn:0};
@@ -118,7 +121,7 @@ function polUpdatePolls(c,initialize=false){
   let v=party.base+(party.positions.tax-market)*(market-.5)*16+(party.positions.welfare-.5)*(welfare-.5)*16+(party.positions.security-.5)*(security-.5)*12;
   v+=(party.positions.liberty-.5)*((inst/100)-.5)*10+(party.positions.authority-.5)*(1-inst/100)*10;
   v+=party.populism*(.5-growth)*8;
-  if(governing.has(party.id))v+=(approval-50)*.075+(legitimacy-50)*.035-(debt-.35)*4-(atWar*.5)+(polNumber(n.morale,65)-65)*.08;
+  if(governing.has(party.id)){v+=(approval-50)*.075+(legitimacy-50)*.035-(debt-.35)*4-(atWar*.5)+(polNumber(n.morale,65)-65)*.08;if(p.campaignTerm===p.term&&state.turn<=p.campaignElectionTurn)v+=2.8;}
   if(p.regime==='authoritarian'&&governing.has(party.id))v+=(100-inst)*.18;
   raw.push(Math.max(1,v));
  }
@@ -173,6 +176,24 @@ function polElectionScore(c){
  let settings=polPolicies(c);
  return polClamp(share+(polApproval(c)-50)*.12+(polLegitimacy(c)-50)*.05+settings.mediaLevel*POLITICS_MEDIA_ELECTION_BONUS+(settings.supremeRule?POLITICS_SUPREME_ELECTION_BONUS:0)+(p.regime==='authoritarian'?8:0),0,100);
 }
+
+function polCampaignQuote(c){
+ let p=polModel(c),n=polCountry(c);if(!p||!n)return{ok:false,reason:'No government is available.'};
+ let election=c===state.player?state.election:n.ai?.election,remaining=Number(election)-state.turn,cost=Math.max(0,n.gdp||0)*.012;
+ if(p.government?.status==='caretaker')return{ok:false,reason:'A caretaker government cannot launch a campaign.',cost};
+ if(p.campaignTerm===p.term)return{ok:false,reason:'A constituency campaign has already run this term.',cost};
+ if(remaining<6||remaining>12)return{ok:false,reason:'Available only 6–12 months before the scheduled election.',cost};
+ if((n.treasury||0)+1e-9<cost)return{ok:false,reason:'Treasury reserves cannot cover the campaign.',cost};
+ return{ok:true,cost,electionTurn:Number(election),remaining};
+}
+function polStartCampaign(c){
+ let q=polCampaignQuote(c);if(!q.ok)return q;let p=polModel(c),n=polCountry(c);
+ n.treasury-=q.cost;p.campaignTerm=p.term;p.campaignElectionTurn=q.electionTurn;
+ let message='A constituency campaign is under way. It costs 1.2% of GDP and modestly supports governing-party polling through the election; it does not raise public approval.';
+ if(c===state.player)log(message);else simRecord(c,'Funded a constituency campaign from national reserves.');
+ return{...q,ok:true};
+}
+
 function polRunElection(c){
  polEnsure();let p=polModel(c);if(!p)return{retained:false,score:0,share:0};
  let old=(p.government?.parties||[]).slice();polUpdatePolls(c,true);polAllocateSeats(c);
@@ -199,6 +220,8 @@ function polBillUnavailable(c,bill){
  if(bill.effect==='services'&&bill.delta<0&&n.health<=1&&n.education<=1)return 'Health and education allocations are already at their limits.';
  if(bill.effect==='defence'&&((bill.delta>0&&n.defense>=20)||(bill.delta<0&&n.defense<=1)))return 'Defence allocation is already at this limit.';
  if(bill.effect==='rights'&&p.rightsReforms>=3)return 'The parliamentary rights programme is complete.';
+ if(bill.effect==='corruption'&&p.integrityReformTerm===p.term)return 'Only one anti-corruption act can pass each parliamentary term.';
+ if(bill.effect==='corruption'&&p.corruption<=5)return 'Corruption exposure is already low.';
  if(bill.effect==='emergency'&&p.emergencyPowers)return 'Emergency powers are already in force.';
  return '';
 }
@@ -243,6 +266,7 @@ function polApplyBill(c,bill){
  if(bill.effect==='services'){n.health=polClamp(n.health+(bill.delta>0?.5:-.5),1,15);n.education=polClamp(n.education+(bill.delta>0?.5:-.5),1,12);}
  if(bill.effect==='defence')n.defense=polClamp(n.defense+(bill.delta||0),1,20);
  if(bill.effect==='rights'){p.rightsReforms++;p.settings.mediaLevel=Math.max(0,p.settings.mediaLevel-1);p.settings.supremeRule=false;}
+ if(bill.effect==='corruption'){p.corruption=Math.max(5,p.corruption-12);p.integrityReformTerm=p.term;}
  if(bill.effect==='emergency')p.emergencyPowers=true;
  p.laws.push({id:bill.id,turn:state.turn,passed:true,yes:vote.yes,total:vote.total});
  polRecomputeRegime(c);
@@ -274,7 +298,7 @@ function polMonthly(c){
  let p=polModel(c),n=polCountry(c);polRecomputeRegime(c);polUpdatePolls(c,false);
  let unrest=state.civicDissatisfaction?.[c]||0,solvency=polClamp(1-(n.debt||0)/Math.max(1,n.gdp||1),-1,1);
  let seatShare=p.government?.status==='caretaker'?0:p.government?.seatShare||0;
- let stability=polClamp(seatShare*.42+polLegitimacy(c)*.25+polApproval(c)*.26+polInstitutionScore(c)*.07-unrest*.18+solvency*5,0,100);
+ let stability=polClamp(seatShare*.42+polLegitimacy(c)*.25+polApproval(c)*.26+polInstitutionScore(c)*.07-unrest*.18-p.corruption*.025+solvency*5,0,100);
  if(p.government){p.government.stability=stability;if(p.regime==='authoritarian'&&p.emergencyPowers) p.government.stability=polClamp(stability+8,0,100);}
  if(p.government?.status==='caretaker')return;
  if(p.regime!=='authoritarian'&&stability<18)p.coalitionStrain++;else p.coalitionStrain=0;
@@ -301,12 +325,14 @@ function polAI(c){
  }
  if(!action){
   let billAction=null;
-  if(n.debt/Math.max(1,n.gdp)>1&&n.tax<42)billAction='bill-tax-up';
+  if(p.corruption>=35&&pp>=POLITICS_BILLS['bill-anticorruption'].cost)billAction='bill-anticorruption';
+  else if(n.debt/Math.max(1,n.gdp)>1&&n.tax<42)billAction='bill-tax-up';
   else if(ai.welfare>.7&&n.health<9)billAction='bill-services-up';
   else if(ai.risk>.65&&n.defense<8)billAction='bill-defence-up';
   if(billAction){let q=polQuote(c,billAction);if(q.ok&&q.canAfford&&q.willPass)action=billAction;}
  }
- if(action)polAction(c,action);
+ if(!action){let q=polCampaignQuote(c);if(q.ok)action='campaign';}
+ if(action==='campaign')polStartCampaign(c);else if(action)polAction(c,action);
 }
 function polButton(action,label){
  let q=polQuote(state.player,action);
@@ -318,14 +344,14 @@ function polBillButton(action,bill){
  return'<button class="wide" data-action="politics:'+action+'" '+(!q.ok||!q.canAfford?'disabled':'')+'>'+bill.label+' · '+q.cost+' PP · '+support+'% seats · '+forecast+'</button>';
 }
 function polPanel(){
- polEnsure();let p=polModel(state.player),rate=polRate(state.approval),gov=p.government,html='<h3>Political institutions</h3><div class="card"><div class="row"><span>Regime</span><b>'+p.regime[0].toUpperCase()+p.regime.slice(1)+'</b></div><div class="row"><span>Institutional score</span><b>'+Math.round(p.institutionScore)+'/100</b></div><div class="row"><span>Parliament</span><b>'+POLITICS_SEATS+' seats · '+p.parliament.elections+' elections</b></div><div class="row"><span>Government</span><b>'+(gov.status==='caretaker'?'Caretaker':gov.parties.map(id=>p.parties.find(x=>x.id===id)?.name||id).join(' + '))+'</b></div><div class="row"><span>Coalition seats / stability</span><b>'+Math.round(gov.seatShare)+'% / '+Math.round(gov.stability)+'</b></div></div>';
+ polEnsure();let p=polModel(state.player),rate=polRate(state.approval),gov=p.government,html='<h3>Political institutions</h3><div class="card"><div class="row"><span>Regime</span><b>'+p.regime[0].toUpperCase()+p.regime.slice(1)+'</b></div><div class="row"><span>Institutional score</span><b>'+Math.round(p.institutionScore)+'/100</b></div><div class="row"><span>Corruption exposure</span><b>'+Math.round(p.corruption)+'/100</b></div><div class="row"><span>Parliament</span><b>'+POLITICS_SEATS+' seats · '+p.parliament.elections+' elections</b></div><div class="row"><span>Government</span><b>'+(gov.status==='caretaker'?'Caretaker':gov.parties.map(id=>p.parties.find(x=>x.id===id)?.name||id).join(' + '))+'</b></div><div class="row"><span>Coalition seats / stability</span><b>'+Math.round(gov.seatShare)+'% / '+Math.round(gov.stability)+'</b></div></div>';
  html+='<h3>Political power</h3><div class="card"><div class="row"><span>Available</span><b>'+polPower(state.player)+' PP</b></div><div class="row"><span>Monthly gain</span><b>'+rate+' PP</b></div><p>Gain 1 PP at 60–79% approval, 2 at 80–89%, and 3 at 90% or higher. Political power resets at elections.</p></div>';
  html+='<h3>Party representation</h3><div class="card">';
  for(let party of p.parties.slice().sort((a,b)=>b.seats-a.seats))html+='<div class="row"><span>'+party.name+'</span><b>'+party.poll.toFixed(1)+'% · '+party.seats+' seats</b></div><p class="note">Positions · tax '+Math.round(party.positions.tax*100)+' · welfare '+Math.round(party.positions.welfare*100)+' · security '+Math.round(party.positions.security*100)+' · liberty '+Math.round(party.positions.liberty*100)+' · authority '+Math.round(party.positions.authority*100)+'</p>';
  html+='<p>Votes respond to growth, debt, public services, defence policy, government performance, and institutions. Parliament uses proportional D’Hondt seat allocation; coalition partners must assemble a majority.</p></div>';
  html+='<h3>Legislation</h3><div class="card"><p>Party interests determine parliamentary votes. A defeated bill still spends political power and weakens government stability.</p>';
  for(let action in POLITICS_BILLS)html+=polBillButton(action,POLITICS_BILLS[action]);
- html+='<p class="note">Passed laws change the existing tax and spending settings or alter democratic safeguards. Those settings feed the shared national budget.</p></div>';
+ html+='<p class="note">Passed laws change tax, spending, democratic safeguards, or integrity enforcement. Integrity reforms improve government stability and investment confidence over time.</p></div>';
  html+='<h3>Political controls</h3><div class="card"><b>Election interval · '+(p.settings.termMonths/12)+' years</b><p>Shorter intervals strengthen accountability. Longer intervals delay the next election and PP reset.</p>';
  if(p.settings.termMonths>POLITICS_MIN_TERM)html+=polButton('term-shorter','Shorten by 1 year');if(p.settings.termMonths<POLITICS_MAX_TERM)html+=polButton('term-longer','Extend by 1 year');
  html+='</div><div class="card"><b>Media control · level '+p.settings.mediaLevel+'/3</b><p>Each level slightly improves monthly approval, softens negative event impacts, and adds 2 points to modeled election support. Consolidation harms approval and legitimacy; reversal restores them.</p>';

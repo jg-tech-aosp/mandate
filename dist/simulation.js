@@ -100,7 +100,7 @@ function simDecision(c){
   simRecord(c,'Deferred recruitment: '+recruited.reason);return;
  }
  if(decision==='trade'&&simDiplomacy(c))return;
- if(simSpend(n,n.gdp*.002)){econFundInvestment(n,n.gdp*.002);ai.approval=clamp(ai.approval+1,0,100);simRecord(c,'Approved an infrastructure investment programme.');}else simRecord(c,'Prioritized reserve recovery and deferred new spending.');
+ let programme=econRunStimulus(n);if(programme.ok)simRecord(c,'Approved a national investment programme with treasury funding.');else simRecord(c,'Deferred the national investment programme: '+programme.reason);
 }
 function simAIWar(c){let n=state.countries[c],ai=n.ai;if(ai.risk<.8||state.turn<9||simAtWar(c)||state.wars.filter(w=>w.active).length>=2)return;
  for(let b of ai.rivals){if(ptTruce(c,b)||state.countries[c].overlord||!world[b]||allied(c,b)||state.countries[b].owner!==b||simFrontPair(c,b)||simRelation(c,b)>-65)continue;
