@@ -4,6 +4,7 @@ const POLITICS_SCHEMA=4;
 const POLITICS_BASE_TERM=48,POLITICS_MIN_TERM=24,POLITICS_MAX_TERM=96,POLITICS_STEP=12,POLITICS_COST=20;
 const POLITICS_MEDIA_DRIFT=.08,POLITICS_MEDIA_EVENT_SHIELD=.2,POLITICS_MEDIA_ELECTION_BONUS=2,POLITICS_SUPREME_ELECTION_BONUS=12;
 const POLITICS_SEATS=120;
+const POLITICS_BUDGET_COST=16,POLITICS_BUDGET_COOLDOWN=12;
 const POLITICS_REGIMES={democratic:['LV','LT','EE','FI','SE','NO','DK','IS','IE','PT','ES','FR','DE','NL','BE','LU','AT','CH','IT','MT','SM','MC','AD','LI','VA','PL','CZ','SK','SI','HR','GR','CY'],authoritarian:['RU','BY'],hybrid:['TR','RS','AZ','AM','GE','MD','BA','AL','MK','ME','XK','UA','BG','RO','HU']};
 const POLITICS_PARTY_TEMPLATES=[
  {id:'social',name:'Social Democrats',base:29,positions:{tax:.78,welfare:.88,security:.48,liberty:.78,authority:.2},populism:.25},
@@ -63,7 +64,7 @@ function polEnsure(){
   p.settings=settings;
   p.settings.termMonths=Math.round(polClamp(polNumber(p.settings.termMonths,POLITICS_BASE_TERM),POLITICS_MIN_TERM,POLITICS_MAX_TERM)/POLITICS_STEP)*POLITICS_STEP;
   p.settings.mediaLevel=Math.floor(polClamp(polNumber(p.settings.mediaLevel,0),0,3));p.settings.supremeRule=!!p.settings.supremeRule;
-  p.institutionBase=polClamp(polNumber(p.institutionBase,polRegimeBase(c)),0,100);p.rightsReforms=Math.max(0,Math.floor(polNumber(p.rightsReforms,0)));p.emergencyPowers=!!p.emergencyPowers;p.corruption=polClamp(polNumber(p.corruption,regime==='authoritarian'?58:regime==='hybrid'?34:18),0,100);p.integrityReformTerm=Math.max(0,Math.floor(polNumber(p.integrityReformTerm,0)));p.campaignTerm=Math.max(0,Math.floor(polNumber(p.campaignTerm,0)));p.campaignElectionTurn=Math.max(-1,Math.floor(polNumber(p.campaignElectionTurn,-1)));p.lastConfidenceVote=p.lastConfidenceVote&&typeof p.lastConfidenceVote==='object'?p.lastConfidenceVote:null;
+  p.institutionBase=polClamp(polNumber(p.institutionBase,polRegimeBase(c)),0,100);p.rightsReforms=Math.max(0,Math.floor(polNumber(p.rightsReforms,0)));p.emergencyPowers=!!p.emergencyPowers;p.corruption=polClamp(polNumber(p.corruption,regime==='authoritarian'?58:regime==='hybrid'?34:18),0,100);p.integrityReformTerm=Math.max(0,Math.floor(polNumber(p.integrityReformTerm,0)));p.campaignTerm=Math.max(0,Math.floor(polNumber(p.campaignTerm,0)));p.campaignElectionTurn=Math.max(-1,Math.floor(polNumber(p.campaignElectionTurn,-1)));p.lastBudgetTurn=Math.floor(polNumber(p.lastBudgetTurn,-POLITICS_BUDGET_COOLDOWN));p.lastConfidenceVote=p.lastConfidenceVote&&typeof p.lastConfidenceVote==='object'?p.lastConfidenceVote:null;
  
   p.parties=Array.isArray(p.parties)&&p.parties.length?p.parties:polInitialParties(c,regime);
   for(let party of p.parties){party.positions||={};for(let axis of POLITICS_AXES)party.positions[axis]=polClamp(polNumber(party.positions[axis],.5),0,1);party.poll=polClamp(polNumber(party.poll,25),0,100);party.seats=Math.max(0,Math.floor(polNumber(party.seats,0)));party.base=polNumber(party.base,25);}
@@ -100,6 +101,25 @@ function polPower(c){return polModel(c)?.politicalPower||0;}
 function polSetPower(c,value){let p=polModel(c);if(p)p.politicalPower=Math.max(0,Math.floor(Number(value)||0));}
 function polApproval(c){return polModel(c)?.approval??58;}
 function polLegitimacy(c){return polModel(c)?.legitimacy??60;}
+
+const POLITICS_BUDGET_FIELDS={tax:{axis:'tax',min:15,max:55},health:{axis:'welfare',min:1,max:15},education:{axis:'welfare',min:1,max:12},defense:{axis:'security',min:1,max:20},infra:{axis:'welfare',min:1,max:12}};
+function polBudgetQuote(c,proposal={}){
+ let p=polModel(c),n=polCountry(c);if(!p||!n)return{ok:false,reason:'No government is available.',yes:0,total:0};
+ let changes=[];
+ for(let [key,rule] of Object.entries(POLITICS_BUDGET_FIELDS)){let value=Number(proposal[key]??n[key]);if(!Number.isFinite(value)||value<rule.min||value>rule.max)return{ok:false,reason:'One or more budget settings are outside the allowed range.',yes:0,total:0};value=Math.round(value);let current=Number(n[key])||0;if(value!==current)changes.push({key,axis:rule.axis,direction:value>current?'up':'down',from:current,to:value});}
+ if(!changes.length)return{ok:false,reason:'Move one or more budget sliders to prepare a proposal.',yes:0,total:0};
+ if(p.government?.status==='caretaker')return{ok:false,reason:'A caretaker government cannot introduce a budget.',yes:0,total:0};
+ let elapsed=state.turn-p.lastBudgetTurn,remaining=Math.max(0,POLITICS_BUDGET_COOLDOWN-elapsed);if(remaining>0)return{ok:false,reason:'A budget has already passed recently. Try again in '+remaining+' months.',yes:0,total:0};
+ let yes=0;for(let change of changes)for(let party of p.parties){let position=party.positions[change.axis]??.5,agrees=change.direction==='up'?position>=.5:position<.5;if(agrees)yes+=party.seats;}
+ let total=POLITICS_SEATS*changes.length,cost=POLITICS_BUDGET_COST;
+ return{ok:true,reason:'',proposal:Object.fromEntries(Object.keys(POLITICS_BUDGET_FIELDS).map(k=>[k,Math.round(Number(proposal[k]??n[k]))])),changes,yes,total,cost,willPass:yes>total/2,canAfford:polPower(c)>=cost,remaining};
+}
+function polSubmitBudget(c,proposal={}){
+ let q=polBudgetQuote(c,proposal);if(!q.ok)return q;if(!q.canAfford)return{...q,ok:false,reason:'The budget proposal requires '+q.cost+' political power.'};
+ let p=polModel(c),n=polCountry(c);polSetPower(c,polPower(c)-q.cost);
+ if(!q.willPass){p.government.stability=polClamp((p.government.stability||50)-8,0,100);if(c===state.player){p.approval=polClamp(p.approval-1,0,100);p.legitimacy=polClamp(p.legitimacy-1,0,100);}else{p.approval=polClamp(p.approval-1,0,100);p.legitimacy=polClamp(p.legitimacy-1,0,100);}p.laws.push({id:'budget',turn:state.turn,passed:false,yes:q.yes,total:q.total,proposal:q.proposal});let message='The national budget failed in parliament ('+q.yes+'/'+q.total+' weighted votes). Political power spent: '+q.cost+' PP.';if(c===state.player)log(message);else simRecord(c,message);return{...q,ok:true,passed:false};}
+ for(let key of Object.keys(POLITICS_BUDGET_FIELDS))n[key]=q.proposal[key];p.lastBudgetTurn=state.turn;p.laws.push({id:'budget',turn:state.turn,passed:true,yes:q.yes,total:q.total,proposal:q.proposal});let message='Parliament passed the national budget. Revised allocations take effect next month.';if(c===state.player)log(message+' Political power spent: '+q.cost+' PP.');else simRecord(c,message+' Spent '+q.cost+' political power.',true);return{...q,ok:true,passed:true};
+}
 
 function polRate(approval){let rating=Math.floor(Number(approval)||0);return rating>=95?4:rating>=85?3:rating>=70?2:rating>=50?1:0;}
 function polAccrue(c){if(c!==state.player&&state.countries[c].owner!==c)return 0;let earned=polRate(polApproval(c));polSetPower(c,polPower(c)+earned);return earned;}
