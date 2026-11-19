@@ -16,7 +16,7 @@ function wcLegal(key,w){
  let micro=wcMicrostates().get(key);if(micro)return micro;
  let cacheKey=(state?.mode||mode||'legal')+'|'+key;if(wcLegalCache.has(cacheKey))return wcLegalCache.get(cacheKey);
  let p=wcPoint(key),c=Object.keys(world).find(c=>wcContains(p,c))||null;
- if(!c&&(state?.mode||mode)==='control'){let samples=wcUkraineSamples(key);if(samples.length>=4||(samples.length&&wcOccupiedCell(key)))c='UA';}
+ if(!c&&(state?.mode||mode)==='control'){let samples=wcUkraineSamples(key);if(samples.length>=4||wcOccupiedCell(key))c='UA';}
  wcLegalCache.set(cacheKey,c);return c;
 }
 function wcRoot(c){if(!state)return c;let seen=new Set();while(c&&state.countries[c]?.owner!==c&&!seen.has(c)){seen.add(c);c=state.countries[c]?.owner;}return c;}
@@ -60,16 +60,16 @@ function wcTouchesUkraineEdge(key){
  return false;
 }
 function wcRawOccupiedCell(key){
- let center=wcPoint(key),samples=wcUkraineSamples(key);if(!samples.length)return false;
- if(wcContains(center,'UA')&&wcInsideOccupation(center))return true;
- if(samples.filter(wcInsideOccupation).length*2>=samples.length)return true;
+ let center=wcPoint(key),samples=wcUkraineSamples(key);
+ if(samples.length&&wcContains(center,'UA')&&wcInsideOccupation(center))return true;
+ if(samples.length&&samples.filter(wcInsideOccupation).length*2>=samples.length)return true;
  if(!wcTouchesUkraineEdge(key))return false;
  let fine=wcFineUkraineSamples(key);return fine.length>0&&fine.filter(wcInsideOccupation).length*2>=fine.length;
 }
 function wcOccupiedCell(key){
- let center=wcPoint(key),samples=wcUkraineSamples(key);if(!samples.length)return false;
- if(wcContains(center,'UA')&&wcInsideOccupation(center))return true;
- if(samples.filter(wcInsideOccupation).length*2>=samples.length)return true;
+ let center=wcPoint(key),samples=wcUkraineSamples(key);
+ if(samples.length&&wcContains(center,'UA')&&wcInsideOccupation(center))return true;
+ if(samples.length&&samples.filter(wcInsideOccupation).length*2>=samples.length)return true;
  if(!wcTouchesUkraineEdge(key))return false;
  let fine=wcFineUkraineSamples(key),occupied=fine.filter(wcInsideOccupation).length;
  if(fine.length&&occupied*2>=fine.length)return true;
