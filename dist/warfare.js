@@ -73,7 +73,7 @@ function wcOccupiedCell(key){
  if(!wcTouchesUkraineEdge(key))return false;
  let fine=wcFineUkraineSamples(key),occupied=fine.filter(wcInsideOccupation).length;
  if(fine.length&&occupied*2>=fine.length)return true;
- return occupied>0&&occupied*4>=fine.length&&wcNeighbors(key).filter(wcRawOccupiedCell).length>=1;
+ return occupied>0&&wcNeighbors(key).some(neighbor=>wcRawOccupiedCell(neighbor));
 }
 function wcSetOwner(key,c,w){if(c===wcBase(key,w))delete state.control[key];else state.control[key]=c;}
 function wcFind(a,b,includePeace=false){return state.wars.find(w=>w.shared&&[w.a,w.b].includes(a)&&[w.a,w.b].includes(b)&&a!==b&&(includePeace||w.active));}
