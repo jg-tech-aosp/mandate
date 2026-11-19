@@ -2,7 +2,7 @@
 // One exclusive controller per small hex. Armies move the existing shared front.
 const WC_RADIUS=.016,WC_WIDTH=Math.sqrt(3)*WC_RADIUS*1.5,WC_HEIGHT=1.5*WC_RADIUS;
 const WC_DIRS=[[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
-let wcLegalCache=new Map(),wcShapeCache=null,wcCityCache=null,wcOccupationPolygons=null,wcCellSamplesCache=new Map(),wcUkraineSamplesCache=new Map();
+let wcLegalCache=new Map(),wcShapeCache=null,wcCityCache=null,wcOccupationPolygons=null,wcCellSamplesCache=new Map(),wcUkraineSamplesCache=new Map(),wcFineCellSamplesCache=new Map(),wcFineUkraineSamplesCache=new Map();
 function wcPoint(key){let [q,r]=key.split(',').map(Number);return[WC_WIDTH*(q+r/2),WC_HEIGHT*r];}
 function wcKey(lon,lat){let rf=lat/WC_HEIGHT,qf=lon/WC_WIDTH-rf/2,sf=-qf-rf,q=Math.round(qf),r=Math.round(rf),s=Math.round(sf),dq=Math.abs(q-qf),dr=Math.abs(r-rf),ds=Math.abs(s-sf);if(dq>dr&&dq>ds)q=-r-s;else if(dr>ds)r=-q-s;return q+','+r;}
 function wcNeighbors(key){let [q,r]=key.split(',').map(Number);return WC_DIRS.map(([dq,dr])=>(q+dq)+','+(r+dr));}
@@ -33,6 +33,17 @@ function wcCellSamples(key){
  for(let i=0;i<6;i++){let angle=(60*i+30)*Math.PI/180;samples.push([center[0]+WC_RADIUS*1.5*.65*Math.cos(angle),center[1]+WC_RADIUS*.65*Math.sin(angle)]);}
  wcCellSamplesCache.set(key,samples);return samples;
 }
+function wcFineCellSamples(key){
+ if(wcFineCellSamplesCache.has(key))return wcFineCellSamplesCache.get(key);
+ let center=wcPoint(key),samples=[center];
+ for(let i=0;i<6;i++){let angle=(60*i+30)*Math.PI/180;samples.push([center[0]+WC_RADIUS*1.5*.35*Math.cos(angle),center[1]+WC_RADIUS*.35*Math.sin(angle)]);}
+ for(let i=0;i<12;i++){let angle=30*i*Math.PI/180;samples.push([center[0]+WC_RADIUS*1.5*.82*Math.cos(angle),center[1]+WC_RADIUS*.82*Math.sin(angle)]);}
+ wcFineCellSamplesCache.set(key,samples);return samples;
+}
+function wcFineUkraineSamples(key){
+ if(wcFineUkraineSamplesCache.has(key))return wcFineUkraineSamplesCache.get(key);
+ let samples=wcFineCellSamples(key).filter(p=>wcContains(p,'UA'));wcFineUkraineSamplesCache.set(key,samples);return samples;
+}
 function wcUkraineSamples(key){
  if(wcUkraineSamplesCache.has(key))return wcUkraineSamplesCache.get(key);
  let samples=wcCellSamples(key).filter(p=>wcContains(p,'UA'));wcUkraineSamplesCache.set(key,samples);return samples;
@@ -43,23 +54,26 @@ function wcInsideOccupation(p){
  for(let{poly,b}of wcOccupationPolygons)if(wcInBounds(p,b)&&insideRing(p,poly[0])&&!poly.slice(1).some(r=>insideRing(p,r)))return true;
  return false;
 }
-function wcRawOccupiedCell(key){
- let center=wcPoint(key),samples=wcUkraineSamples(key);if(!samples.length)return false;
- if(wcContains(center,'UA')&&wcInsideOccupation(center))return true;
- let occupied=samples.filter(wcInsideOccupation).length;
- return occupied*2>=samples.length;
-}
 function wcTouchesUkraineEdge(key){
  let center=wcPoint(key);
  for(let i=0;i<6;i++){let angle=(60*i+30)*Math.PI/180,p=[center[0]+WC_RADIUS*1.5*Math.cos(angle),center[1]+WC_RADIUS*Math.sin(angle)];if(!wcContains(p,'UA'))return true;}
  return false;
 }
+function wcRawOccupiedCell(key){
+ let center=wcPoint(key),samples=wcUkraineSamples(key);if(!samples.length)return false;
+ if(wcContains(center,'UA')&&wcInsideOccupation(center))return true;
+ if(samples.filter(wcInsideOccupation).length*2>=samples.length)return true;
+ if(!wcTouchesUkraineEdge(key))return false;
+ let fine=wcFineUkraineSamples(key);return fine.length>0&&fine.filter(wcInsideOccupation).length*2>=fine.length;
+}
 function wcOccupiedCell(key){
  let center=wcPoint(key),samples=wcUkraineSamples(key);if(!samples.length)return false;
  if(wcContains(center,'UA')&&wcInsideOccupation(center))return true;
- let occupied=samples.filter(wcInsideOccupation).length;
- if(occupied*2>=samples.length)return true;
- return occupied>0&&wcTouchesUkraineEdge(key)&&wcNeighbors(key).filter(wcRawOccupiedCell).length>=2;
+ if(samples.filter(wcInsideOccupation).length*2>=samples.length)return true;
+ if(!wcTouchesUkraineEdge(key))return false;
+ let fine=wcFineUkraineSamples(key),occupied=fine.filter(wcInsideOccupation).length;
+ if(fine.length&&occupied*2>=fine.length)return true;
+ return occupied>0&&occupied*4>=fine.length&&wcNeighbors(key).filter(wcRawOccupiedCell).length>=1;
 }
 function wcSetOwner(key,c,w){if(c===wcBase(key,w))delete state.control[key];else state.control[key]=c;}
 function wcFind(a,b,includePeace=false){return state.wars.find(w=>w.shared&&[w.a,w.b].includes(a)&&[w.a,w.b].includes(b)&&a!==b&&(includePeace||w.active));}
