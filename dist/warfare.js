@@ -16,7 +16,7 @@ function wcLegal(key,w){
  let micro=wcMicrostates().get(key);if(micro)return micro;
  let cacheKey=(state?.mode||mode||'legal')+'|'+key;if(wcLegalCache.has(cacheKey))return wcLegalCache.get(cacheKey);
  let p=wcPoint(key),c=Object.keys(world).find(c=>wcContains(p,c))||null;
- if(!c&&(state?.mode||mode)==='control'&&wcUkraineSamples(key).length>=4)c='UA';
+ if(!c&&(state?.mode||mode)==='control'){let samples=wcUkraineSamples(key);if(samples.length>=4||(samples.length&&wcOccupiedCell(key)))c='UA';}
  wcLegalCache.set(cacheKey,c);return c;
 }
 function wcRoot(c){if(!state)return c;let seen=new Set();while(c&&state.countries[c]?.owner!==c&&!seen.has(c)){seen.add(c);c=state.countries[c]?.owner;}return c;}
@@ -43,11 +43,23 @@ function wcInsideOccupation(p){
  for(let{poly,b}of wcOccupationPolygons)if(wcInBounds(p,b)&&insideRing(p,poly[0])&&!poly.slice(1).some(r=>insideRing(p,r)))return true;
  return false;
 }
-function wcOccupiedCell(key){
+function wcRawOccupiedCell(key){
  let center=wcPoint(key),samples=wcUkraineSamples(key);if(!samples.length)return false;
  if(wcContains(center,'UA')&&wcInsideOccupation(center))return true;
  let occupied=samples.filter(wcInsideOccupation).length;
  return occupied*2>=samples.length;
+}
+function wcTouchesUkraineEdge(key){
+ let center=wcPoint(key);
+ for(let i=0;i<6;i++){let angle=(60*i+30)*Math.PI/180,p=[center[0]+WC_RADIUS*1.5*Math.cos(angle),center[1]+WC_RADIUS*Math.sin(angle)];if(!wcContains(p,'UA'))return true;}
+ return false;
+}
+function wcOccupiedCell(key){
+ let center=wcPoint(key),samples=wcUkraineSamples(key);if(!samples.length)return false;
+ if(wcContains(center,'UA')&&wcInsideOccupation(center))return true;
+ let occupied=samples.filter(wcInsideOccupation).length;
+ if(occupied*2>=samples.length)return true;
+ return occupied>0&&wcTouchesUkraineEdge(key)&&wcNeighbors(key).filter(wcRawOccupiedCell).length>=2;
 }
 function wcSetOwner(key,c,w){if(c===wcBase(key,w))delete state.control[key];else state.control[key]=c;}
 function wcFind(a,b,includePeace=false){return state.wars.find(w=>w.shared&&[w.a,w.b].includes(a)&&[w.a,w.b].includes(b)&&a!==b&&(includePeace||w.active));}
