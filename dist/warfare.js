@@ -44,9 +44,10 @@ function wcInsideOccupation(p){
  return false;
 }
 function wcOccupiedCell(key){
- let samples=wcUkraineSamples(key);if(!samples.length)return false;
+ let center=wcPoint(key),samples=wcUkraineSamples(key);if(!samples.length)return false;
+ if(wcContains(center,'UA')&&wcInsideOccupation(center))return true;
  let occupied=samples.filter(wcInsideOccupation).length;
- return occupied*2>samples.length;
+ return occupied*2>=samples.length;
 }
 function wcSetOwner(key,c,w){if(c===wcBase(key,w))delete state.control[key];else state.control[key]=c;}
 function wcFind(a,b,includePeace=false){return state.wars.find(w=>w.shared&&[w.a,w.b].includes(a)&&[w.a,w.b].includes(b)&&a!==b&&(includePeace||w.active));}
