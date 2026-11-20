@@ -164,7 +164,7 @@ function milPlaceDivision(c,id,key){
   d.location=key;d.deployment='home';d.arrivalTurn=state.turn;milSyncCountry(n);return{ok:true,location:key};
 }
 function milEnemyAt(code,key,w){
- for(let c of[w.a,w.b])if(c!==code){let found=milDivisionEntries(state.countries[c]).find(x=>x.division.deployment===w.id&&x.division.location===key);if(found)return{n:state.countries[c],...found};}
+ for(let c of[w.a,w.b])if(c!==code){let found=milDivisionEntries(state.countries[c]).find(x=>x.division.deployment!=='reserve'&&x.division.location===key&&x.division.arrivalTurn<=state.turn);if(found)return{n:state.countries[c],...found};}
  return null;
 }
 function milCaptureAround(c,key,w){
@@ -178,7 +178,7 @@ function milResolveBattle(attacker,ad,defender,dd,w){
  return{attackerWins,attackRoll,defenseRoll,attackScore,defenseScore,attackerLoss,defenderLoss};
 }
 function milRetreatDivision(n,d,w,from,opponentLocation){
- let choices=wcNeighbors(from).filter(key=>wcRoot(wcOwner(key,w))===n.code&&!milDivisionEntries(n).some(x=>x.division.id!==d.id&&x.division.location===key));choices.sort((a,b)=>(opponentLocation?milHexDistance(b,opponentLocation)-milHexDistance(a,opponentLocation):0)||a.localeCompare(b));if(choices.length){d.location=choices[0];return{retreated:true,location:d.location};}d.deployment='reserve';d.location=null;return{retreated:false,location:null};
+ let choices=wcNeighbors(from).filter(key=>wcRoot(wcOwner(key,w))===n.code);choices.sort((a,b)=>(opponentLocation?milHexDistance(b,opponentLocation)-milHexDistance(a,opponentLocation):0)||a.localeCompare(b));if(choices.length){d.location=choices[0];return{retreated:true,location:d.location};}d.deployment='reserve';d.location=null;return{retreated:false,location:null};
 }
 function milFieldEngagement(attacker,ad,defender,dd,w,key){let result=milResolveBattle(attacker,ad,defender,dd,w);if(result.attackerWins)result.defenderRetreat=milRetreatDivision(defender,dd,w,key,ad.location);return result;}
 function milAttackDivision(c,id,enemyCode,enemyId){
@@ -190,7 +190,21 @@ function milMoveDivision(c,id,target,hint=null){
  let war=milWarForMove(n,d,target,hint),path=milFindPath(n,d,target,war,MIL_MAX_MOVE);if(!path)return{ok:false,reason:'Destination is blocked, over 20 connected cells away, or beyond the 4-cell enemy advance limit.'};if(path.length===1)return{ok:false,reason:'Choose a different map cell.'};
  let beforeCities=war?Object.fromEntries(wcCities().map(city=>[city.id,wcCityOwner(city)])):null,from=d.location,current=from,capturedKeys=[],engagements=0,battles=[],troopsLost=0,enemyPath=new Set(war?path.slice(1).filter(key=>wcRoot(wcOwner(key,war))!==n.code):[]);
  for(let key of path.slice(1)){
-  if(war){if(enemyPath.has(key)){let before=d.personnel,after=Math.max(.05,before*(1-MIL_ADVANCE_ATTRITION));d.personnel=after;troopsLost+=before-after;let conflict=milEnemyAt(n.code,key,war);if(conflict){engagements++;let battle=milFieldEngagement(n,d,conflict.n,conflict.division,war,key);battles.push(battle);if(!battle.attackerWins)break;}capturedKeys.push(...milCaptureAround(n.code,key,war));}}
+  if(war){
+   let conflict=milEnemyAt(n.code,key,war);
+   if(enemyPath.has(key)||conflict){
+    if(enemyPath.has(key)){let before=d.personnel,after=Math.max(.05,before*(1-MIL_ADVANCE_ATTRITION));d.personnel=after;troopsLost+=before-after;}
+    let attackerHolds=true;
+    while(conflict){
+     if(conflict.division.deployment==='home')conflict.division.deployment=war.id;
+     engagements++;let battle=milFieldEngagement(n,d,conflict.n,conflict.division,war,key);battles.push(battle);
+     if(!battle.attackerWins){attackerHolds=false;break;}
+     conflict=milEnemyAt(n.code,key,war);
+    }
+    if(!attackerHolds)break;
+    if(enemyPath.has(key))capturedKeys.push(...milCaptureAround(n.code,key,war));
+   }
+  }
   current=key;
  }
  d.location=current;d.lastMoveTurn=state.turn;if(war&&(d.deployment===war.id||capturedKeys.length>0||[war.a,war.b].includes(wcRoot(wcLegal(current,war)))))d.deployment=war.id;else d.deployment='home';d.arrivalTurn=state.turn;milSyncCountry(n);
@@ -304,7 +318,7 @@ function milFrontCellsWithin(w,range=2){
 }
 function milVisibleFrontDivisions(n){
  const fronts=(state.wars||[]).filter(w=>w.active&&[w.a,w.b].includes(n.code)&&[w.a,w.b].includes(state.player)),entries=milDivisionEntries(n),seen=new Set();
- for(let w of fronts){const nearFront=milFrontCellsWithin(w,2);for(let{division:d}of entries)if(d.deployment===w.id&&d.arrivalTurn<=state.turn&&nearFront.has(d.location))seen.add(d)}
+ for(let w of fronts){const nearFront=milFrontCellsWithin(w,2);for(let{division:d}of entries)if((d.deployment===w.id||d.deployment==='home')&&d.arrivalTurn<=state.turn&&nearFront.has(d.location))seen.add(d)}
  return seen;
 }
 function milInspector(n){
