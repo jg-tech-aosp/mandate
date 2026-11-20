@@ -93,22 +93,40 @@ for(let f of features){let c=f.properties.code;ptCountryPath(c);ctx.fillStyle=wc
 if(state){for(let occ of state.occupations){if(occ.scenario)continue;path(world[occ.b].feature);ctx.save();ctx.clip('evenodd');ctx.fillStyle=wcTerritoryColor(occ.b,wcRoot(occ.a));if(occ.geometry){path(occ);ctx.fill('evenodd');}else drawCells(occ.cells,occ.step||.16);ctx.restore()}simDrawFront();wcDraw();resDraw();ptDrawTitles();ptDraw();for(let c of [state.player,target,hovered]){if(!c||!world[c])continue;ptCountryPath(c);ctx.strokeStyle=c===state.player?'#d8eba6':c===target?'#f0d7a5':'#e6ede8';ctx.lineWidth=c===target?2:1.4;ctx.stroke()}}
 let z=view.z;if(z<4.5){ctx.textAlign='center';for(let c in world){let labelPoint=ptCountryLabelPoint(c);if(!labelPoint)continue;let p=screen(...labelPoint);if(p[0]<-30||p[0]>W+30||p[1]<0||p[1]>H)continue;let small=['LU','AD','MC','LI','SM','VA','MT','XK','ME'].includes(c);if(small&&z<2.5)continue;if(z<1.4)continue;ctx.font=(c===state?.player?'600 ':'500 ')+(z<1.4?9:11)+'px system-ui';ctx.fillStyle=c===state?.player?'#172c27':'#e0e9df';ctx.shadowColor='#203b35';ctx.shadowBlur=2;ctx.fillText(z>1.4?name(c):c,p[0],p[1]);ctx.shadowBlur=0}}
 if(z>.95){ctx.textAlign='left';let occupied=[],drawn=0;for(let p of places){if(drawn>900)break;let threshold=z<1.8?900000:z<3?300000:z<5?70000:z<9?15000:z<18?3000:z<32?500:0;if(!p[5]&&p[3]<threshold)continue;let s=screen(p[1],p[2]);if(s[0]<10||s[0]>W-50||s[1]<65||s[1]>H-30)continue;let textWidth=Math.min(130,p[0].length*6);if(occupied.some(q=>Math.abs(q[1]-s[1])<15&&s[0]<q[0]+q[2]&&s[0]+textWidth>q[0]))continue;occupied.push([s[0],s[1],textWidth]);drawn++;ctx.beginPath();ctx.arc(...s,p[5]?2.7:1.6,0,Math.PI*2);ctx.fillStyle=p[5]?'#e6e9c9':'#c4d2bd';ctx.fill();ctx.font=(p[5]?'600 ':'')+(p[5]?11:10)+'px system-ui';ctx.strokeStyle='#193136';ctx.lineWidth=3;ctx.strokeText(p[0],s[0]+6,s[1]+3);ctx.fillStyle='#e3ebdc';ctx.fillText(p[0],s[0]+6,s[1]+3)}}
-ctx.save();ctx.font='italic 13px Georgia';ctx.fillStyle='#74909c';ctx.textAlign='center';if(view.z<3)for(let [label,x,y] of [['ATLANTIC OCEAN',-17,49],['BALTIC SEA',19,58],['BLACK SEA',34,43],['MEDITERRANEAN SEA',14,35.5],['NORTH SEA',3,57]]){let p=screen(x,y);ctx.fillText(label,...p)}ctx.restore();milDrawMovementRange();$('#scale').textContent=view.z.toFixed(1)+'× · '+(view.z>18?'SETTLEMENTS':view.z>4?'CITIES & TOWNS':'EUROPE');renderUnitMarkers()}
+ctx.save();ctx.font='italic 13px Georgia';ctx.fillStyle='#74909c';ctx.textAlign='center';if(view.z<3)for(let [label,x,y] of [['ATLANTIC OCEAN',-17,49],['BALTIC SEA',19,58],['BLACK SEA',34,43],['MEDITERRANEAN SEA',14,35.5],['NORTH SEA',3,57]]){let p=screen(x,y);ctx.fillText(label,...p)}ctx.restore();milDrawMovementRange();$('#scale').textContent=view.z.toFixed(1)+'× · '+(view.z>18?'SETTLEMENTS':view.z>4?'CITIES & TOWNS':'EUROPE');scheduleUnitMarkerRender()}
 function mapUnitSpread(index,count){let columns=Math.min(3,count),rows=Math.ceil(count/columns);return[(index%columns-(columns-1)/2)*18,(Math.floor(index/columns)-(rows-1)/2)*16]}
+let unitMarkerElements=new Map(),unitMarkersRenderQueued=false;
+function scheduleUnitMarkerRender(){if(unitMarkersRenderQueued)return;unitMarkersRenderQueued=true;requestAnimationFrame(()=>{unitMarkersRenderQueued=false;renderUnitMarkers()})}
 function renderUnitMarkers(){
- unitMarkers.innerHTML='';if(!state)return;
- for(let code of Object.keys(state.countries)){
-  let n=state.countries[code],entries=milDivisionEntries(n),full=milCanInspectFullRoster(n),visible=full?null:milVisibleFrontDivisions(n),placed=entries.filter(x=>x.division.deployment!=='reserve'&&x.division.location&&(!visible||visible.has(x.division)));
-  for(let{division:d}of placed){
-   let marker=document.createElement('button'),same=placed.filter(x=>x.division.location===d.location),index=same.findIndex(x=>x.division===d),offset=mapUnitSpread(index,Math.max(1,same.length)),point=screen(...wcPoint(d.location)),number=d.id.split('-div-').pop();
-   marker.type='button';marker.className='unitMarker '+(code===state.player?'player':full?'ally':'front')+(d.id===selectedDivision?' selected':'');marker.dataset.owner=code;marker.dataset.division=d.id;marker.dataset.location=d.location;
-   marker.innerHTML='<span class="unitCode">'+code+'</span><b>'+number+'</b>';
-   marker.title=name(code)+' · Division '+number+' · '+d.personnel.toFixed(1)+'k personnel · '+(d.deployment==='reserve'?'Reserve':d.deployment==='home'?'Home territory':'Wartime deployment')+' · '+Math.round(d.readiness)+'% readiness';
-   marker.setAttribute('aria-label',marker.title+(code===state.player?'. Drag to move or select to move; select a division first to attack enemies within 15 cells.':' Click to inspect.'));
-   let x=point[0]+offset[0],y=point[1]+offset[1];if(x<-30||x>W+30||y<-25||y>H+25)continue;
-   marker.style.left=x+'px';marker.style.top=y+'px';unitMarkers.append(marker);
+ const active=new Set();
+ if(state)for(let code of Object.keys(state.countries)){
+  let n=state.countries[code],entries=milDivisionEntries(n),full=milCanInspectFullRoster(n),visible=full?null:milVisibleFrontDivisions(n),byLocation=new Map();
+  for(let{division:d}of entries){
+   if(d.deployment==='reserve'||!d.location||(visible&&!visible.has(d)))continue;
+   let stack=byLocation.get(d.location);if(!stack){stack=[];byLocation.set(d.location,stack)}stack.push(d);
+  }
+  for(let[location,stack]of byLocation){
+   let point=screen(...wcPoint(location));
+   for(let index=0;index<stack.length;index++){
+    let d=stack[index],offset=mapUnitSpread(index,stack.length),number=d.id.split('-div-').pop(),x=point[0]+offset[0],y=point[1]+offset[1];
+    if(x<-30||x>W+30||y<-25||y>H+25)continue;
+    let key=code+'|'+d.id,marker=unitMarkerElements.get(key);
+    if(!marker){marker=document.createElement('button');marker.type='button';marker.dataset.owner=code;marker.dataset.division=d.id;unitMarkerElements.set(key,marker);unitMarkers.append(marker)}
+    active.add(key);
+    let className='unitMarker '+(code===state.player?'player':full?'ally':'front')+(d.id===selectedDivision?' selected':'');
+    if(marker.className!==className)marker.className=className;
+    if(marker.dataset.location!==d.location)marker.dataset.location=d.location;
+    let content='<span class="unitCode">'+code+'</span><b>'+number+'</b>';
+    if(marker.dataset.label!==content){marker.innerHTML=content;marker.dataset.label=content}
+    let title=name(code)+' · Division '+number+' · '+d.personnel.toFixed(1)+'k personnel · '+(d.deployment==='reserve'?'Reserve':d.deployment==='home'?'Home territory':'Wartime deployment')+' · '+Math.round(d.readiness)+'% readiness';
+    if(marker.title!==title)marker.title=title;
+    let aria=title+(code===state.player?'. Drag to move or select to move; select a division first to attack enemies within 15 cells.':' Click to inspect.');
+    if(marker.getAttribute('aria-label')!==aria)marker.setAttribute('aria-label',aria);
+    let left=x+'px',top=y+'px';if(marker.style.left!==left)marker.style.left=left;if(marker.style.top!==top)marker.style.top=top;
+   }
   }
  }
+ for(let[key,marker]of unitMarkerElements)if(!active.has(key)){marker.remove();unitMarkerElements.delete(key)}
 }
 function milDrawMovementRange(){
  if(!selectedDivision||!state)return;let entry=milFindDivision(state.player,selectedDivision);if(!entry||entry.division.deployment==='reserve')return;
