@@ -14,7 +14,7 @@ function ptCountryLoops(c){
  let dynamicSource=typeof resIndependentSourceFor==='function'?resIndependentSourceFor(c):null;
  if(dynamicSource){let loops=wcCountryLoops(dynamicSource);ptBorderCache.set(c,loops);return loops;}
  if(typeof resIndependentActorForSource==='function'&&resIndependentActorForSource(c)){ptBorderCache.set(c,[]);return[];}
- let changed=Object.keys(state.titles).filter(k=>state.titles[k]!==wcLegal(k)&&(state.titles[k]===c||wcLegal(k)===c));
+ let changed=Object.keys(state.titles).filter(k=>state.titles[k]!==wcLegal(k)&&(state.titles[k]===c||wcLegal(k)===c));if(c==='RU'||c==='UA')changed.push(...WC_LEGAL_RUSSIAN_CELLS);changed=[...new Set(changed)];
  if(!changed.length){let original=wcCountryLoops(c);ptBorderCache.set(c,original);return original;}
  let edges=new Map(),affected=new Set();
  for(let loop of wcCountryLoops(c))for(let i=0;i<loop.length;i++){let p=loop[i],n=loop[(i+1)%loop.length],a=Math.round(p[0]/(WC_WIDTH/2))+','+Math.round(p[1]/(WC_RADIUS/2)),b=Math.round(n[0]/(WC_WIDTH/2))+','+Math.round(n[1]/(WC_RADIUS/2));edges.set(ptEdgeId(a,b),[a,b]);}
