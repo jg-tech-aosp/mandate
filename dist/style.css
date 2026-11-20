@@ -102,3 +102,29 @@
 .mapTop,.mapLegend,.zoom,.timeControls,.mapBottom{z-index:4}
 .unitMarker.selected{outline:2px solid #eff5e7;outline-offset:1px;z-index:5}
 .budgetSliders .row{margin:3px 0 0;font-size:12px}.budgetSliders input[type=range]{margin:0 0 6px;height:20px}
+
+/* In-game cell diagnostics and sandbox controls */
+#debugToggle{border-color:#697a54;color:#e4ebd5}
+#debugPanel{position:fixed;z-index:30;top:68px;right:14px;width:min(410px,calc(100vw - 28px));max-height:calc(100vh - 82px);overflow:auto;display:none;padding:14px;border:1px solid #52635c;border-radius:7px;background:#13232af5;box-shadow:0 12px 40px #000b;color:var(--text);backdrop-filter:blur(10px)}
+#debugPanel.open{display:block}
+.dbgHeader{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.dbgHeader strong{display:block;font-size:15px;letter-spacing:.08em}
+.dbgHeader small,.dbgNote{color:var(--muted);font-size:11px}
+.dbgHeader button{min-width:34px}
+.dbgSection{padding:11px 0;border-bottom:1px solid var(--line)}
+.dbgSection:last-child{border-bottom:0;padding-bottom:0}
+.dbgSection h3{margin:0 0 7px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#d6e78d}
+.dbgSection p{margin:5px 0 8px}
+.dbgRow{display:flex;align-items:center;gap:7px;margin-top:7px}
+.dbgRow>*{min-width:0;flex:1}
+.dbgRow button{flex:0 0 auto}
+#debugPanel button,#debugPanel select,#debugPanel input{border:1px solid #42565b;border-radius:4px;background:#1a2d33;color:var(--text);padding:7px 9px}
+#debugPanel button{cursor:pointer}
+#debugPanel button:hover:not(:disabled){border-color:#d6e78d}
+#debugPanel button:disabled{opacity:.45;cursor:not-allowed}
+#debugPanel .dbgPrimary{background:#394a36;border-color:#75875b}
+#debugPanel .dbgDanger{border-color:#744f46;color:#f0b2a2}
+#debugPanel input{width:100%}
+#debugSelectionList{max-height:112px;overflow:auto;margin-top:7px;padding:7px;border:1px solid #2d4147;border-radius:4px;background:#0f1e24;color:#c8d2cc;font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap}
+#debugPanel .dbgStatus{min-height:16px;color:#d6e78d;font-size:11px}
+@media(max-width:800px){#debugPanel{top:auto;right:8px;left:8px;bottom:calc(76px + env(safe-area-inset-bottom));width:auto;max-height:65vh}}
