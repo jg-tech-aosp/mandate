@@ -2,8 +2,8 @@
 // One exclusive controller per small hex. Armies move the existing shared front.
 const WC_RADIUS=.016,WC_WIDTH=Math.sqrt(3)*WC_RADIUS*1.5,WC_HEIGHT=1.5*WC_RADIUS;
 const WC_DIRS=[[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
-// User-confirmed Russian control in the Nov 18 war scenario for edge hexes omitted by the occupation polygon. Sovereignty remains Ukrainian.
-const WC_SCENARIO_RUSSIAN_CELLS=new Set([
+// User-confirmed de jure Russian hex ownership for all game modes.
+const WC_LEGAL_RUSSIAN_CELLS=new Set([
  '-57,1882','-58,1883','-57,1881','-57,1880','-56,1880','-58,1881',
  '-58,1882','-59,1883','-59,1882','-60,1883','-61,1883','-60,1882',
  '-60,1889','-62,1889','-62,1890','-62,1891','-62,1892','-61,1891'
@@ -19,6 +19,7 @@ function wcContains(p,c){return wcShapes()[c]?.some(({poly,b})=>wcInBounds(p,b)&
 let wcMicroCells=null;
 function wcMicrostates(){if(wcMicroCells)return wcMicroCells;wcMicroCells=new Map();for(let c of ['VA','MC','SM','LI','AD']){if(!world[c])continue;let key=wcKey(...world[c].center),near=[key,...wcNeighbors(key)];if(!near.some(k=>wcContains(wcPoint(k),c)))wcMicroCells.set(key,c);}return wcMicroCells;}
 function wcLegal(key,w){
+ if(WC_LEGAL_RUSSIAN_CELLS.has(key))return'RU';
  let micro=wcMicrostates().get(key);if(micro)return micro;
  let cacheKey=(state?.mode||mode||'legal')+'|'+key;if(wcLegalCache.has(cacheKey))return wcLegalCache.get(cacheKey);
  let p=wcPoint(key),c=Object.keys(world).find(c=>wcContains(p,c))||null;
@@ -30,7 +31,7 @@ function wcBase(key,w){
  let geographic=wcLegal(key,w),title=state.titles?.[key],independent=!title&&typeof resIndependentOwner==='function'?resIndependentOwner(key):null,c=title||independent||geographic;if(!c)return null;
  if(!title&&!independent&&state.countries[geographic]?.exile?.occupier)return wcRoot(state.countries[geographic].exile.occupier);
  let owner=wcRoot(c);if(owner!==c)return owner;
- if(c==='UA'&&state.mode==='control'&&WC_SCENARIO_RUSSIAN_CELLS.has(key))return'RU';if(c==='UA'&&state.mode==='control'&&occupationData&&wcOccupiedCell(key))return'RU';return c;
+ if(c==='UA'&&state.mode==='control'&&occupationData&&wcOccupiedCell(key))return'RU';return c;
 }
 function wcOwner(key,w){return wcRoot(state.control?.[key]||wcBase(key,w));}
 function wcCellSamples(key){
@@ -221,7 +222,6 @@ function wcScenarioGrid(){
   let minQ=Math.floor(bounds[0]/WC_WIDTH-r/2)-1,maxQ=Math.ceil(bounds[2]/WC_WIDTH-r/2)+1;
   for(let q=minQ;q<=maxQ;q++){let key=q+','+r;if(wcLegal(key,{a:'UA',b:'RU'})==='UA'&&wcOccupiedCell(key))keys.add(key);}
  }
- if(state.mode==='control')for(let key of WC_SCENARIO_RUSSIAN_CELLS)if(wcLegal(key,{a:'UA',b:'RU'})==='UA')keys.add(key);
  return wcScenarioGridCache={keys,loops:wcGridOutline(keys)};
 }
 function wcOccupationColor(owner){
@@ -238,6 +238,7 @@ function wcDraw(){
  wcDrawScenario();
  let groups={};for(let key of new Set([...Object.keys(state.control),...Object.keys(state.titles||{})])){let legal=wcLegal(key);if(!legal||(!state.titles?.[key]&&state.control[key]===wcBase(key)))continue;let p=screen(...wcPoint(key));if(p[0]<-15||p[0]>W+15||p[1]<-15||p[1]>H+15)continue;(groups[legal]??=[]).push(key);}
  for(let c in groups){ctx.save();path(world[c].feature);ctx.clip('evenodd');let owners={};for(let key of groups[c])(owners[wcOwner(key)]??=[]).push(key);for(let owner in owners){let sovereignGroups={};for(let key of owners[owner])(sovereignGroups[ptSovereign(key)]??=[]).push(key);for(let sovereign in sovereignGroups){ctx.fillStyle=wcTerritoryColor(sovereign,owner);ctx.beginPath();for(let key of sovereignGroups[sovereign])wcHexPath(key);ctx.fill();}}ctx.restore();}
+ for(let key of WC_LEGAL_RUSSIAN_CELLS){let point=screen(...wcPoint(key));if(point[0]<-15||point[0]>W+15||point[1]<-15||point[1]>H+15)continue;ctx.beginPath();wcHexPath(key);ctx.fillStyle=wcTerritoryColor('RU',wcOwner(key));ctx.fill();ctx.strokeStyle='#172c31';ctx.lineWidth=.65;ctx.stroke();}
  ctx.strokeStyle='#f1d1a0';ctx.lineWidth=1.15;ctx.beginPath();for(let w of state.wars){if(!w.active)continue;for(let key of w.frontier){if(wcOwner(key,w)!==w.a)continue;let p=wcPoint(key);for(let [dq,dr] of WC_DIRS){let [q,r]=key.split(',').map(Number),neighbor=(q+dq)+','+(r+dr);if(wcOwner(neighbor,w)!==w.b)continue;let angle=Math.atan2(1.5*dr,Math.sqrt(3)*(dq+dr/2));for(let sign of [-1,1]){let a=angle+sign*Math.PI/6,point=screen(p[0]+WC_RADIUS*1.5*Math.cos(a),p[1]+WC_RADIUS*Math.sin(a));sign===-1?ctx.moveTo(...point):ctx.lineTo(...point);}}}}ctx.stroke();
 }
 let wcAreaCache=new Map();
