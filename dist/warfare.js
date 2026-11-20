@@ -2,6 +2,12 @@
 // One exclusive controller per small hex. Armies move the existing shared front.
 const WC_RADIUS=.016,WC_WIDTH=Math.sqrt(3)*WC_RADIUS*1.5,WC_HEIGHT=1.5*WC_RADIUS;
 const WC_DIRS=[[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
+// User-confirmed Russian control in the Nov 18 war scenario for edge hexes omitted by the occupation polygon. Sovereignty remains Ukrainian.
+const WC_SCENARIO_RUSSIAN_CELLS=new Set([
+ '-57,1882','-58,1883','-57,1881','-57,1880','-56,1880','-58,1881',
+ '-58,1882','-59,1883','-59,1882','-60,1883','-61,1883','-60,1882',
+ '-60,1889','-62,1889','-62,1890','-62,1891','-62,1892','-61,1891'
+]);
 let wcLegalCache=new Map(),wcShapeCache=null,wcCityCache=null,wcOccupationPolygons=null,wcCellSamplesCache=new Map(),wcUkraineSamplesCache=new Map(),wcFineCellSamplesCache=new Map(),wcFineUkraineSamplesCache=new Map();
 function wcPoint(key){let [q,r]=key.split(',').map(Number);return[WC_WIDTH*(q+r/2),WC_HEIGHT*r];}
 function wcKey(lon,lat){let rf=lat/WC_HEIGHT,qf=lon/WC_WIDTH-rf/2,sf=-qf-rf,q=Math.round(qf),r=Math.round(rf),s=Math.round(sf),dq=Math.abs(q-qf),dr=Math.abs(r-rf),ds=Math.abs(s-sf);if(dq>dr&&dq>ds)q=-r-s;else if(dr>ds)r=-q-s;return q+','+r;}
@@ -24,7 +30,7 @@ function wcBase(key,w){
  let geographic=wcLegal(key,w),title=state.titles?.[key],independent=!title&&typeof resIndependentOwner==='function'?resIndependentOwner(key):null,c=title||independent||geographic;if(!c)return null;
  if(!title&&!independent&&state.countries[geographic]?.exile?.occupier)return wcRoot(state.countries[geographic].exile.occupier);
  let owner=wcRoot(c);if(owner!==c)return owner;
- if(c==='UA'&&state.mode==='control'&&occupationData&&wcOccupiedCell(key))return'RU';return c;
+ if(c==='UA'&&state.mode==='control'&&WC_SCENARIO_RUSSIAN_CELLS.has(key))return'RU';if(c==='UA'&&state.mode==='control'&&occupationData&&wcOccupiedCell(key))return'RU';return c;
 }
 function wcOwner(key,w){return wcRoot(state.control?.[key]||wcBase(key,w));}
 function wcCellSamples(key){
@@ -215,6 +221,7 @@ function wcScenarioGrid(){
   let minQ=Math.floor(bounds[0]/WC_WIDTH-r/2)-1,maxQ=Math.ceil(bounds[2]/WC_WIDTH-r/2)+1;
   for(let q=minQ;q<=maxQ;q++){let key=q+','+r;if(wcLegal(key,{a:'UA',b:'RU'})==='UA'&&wcOccupiedCell(key))keys.add(key);}
  }
+ if(state.mode==='control')for(let key of WC_SCENARIO_RUSSIAN_CELLS)if(wcLegal(key,{a:'UA',b:'RU'})==='UA')keys.add(key);
  return wcScenarioGridCache={keys,loops:wcGridOutline(keys)};
 }
 function wcOccupationColor(owner){
