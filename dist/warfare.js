@@ -8,6 +8,13 @@ const WC_LEGAL_RUSSIAN_CELLS=new Set([
  '-58,1882','-59,1883','-59,1882','-60,1883','-61,1883','-60,1882',
  '-60,1889','-62,1889','-62,1890','-62,1891','-62,1892','-61,1891'
 ]);
+// User-selected cells from the debug report; these are Russian-controlled only in the war scenario.
+const WC_SCENARIO_RUSSIAN_CONTROL_CELLS=new Set([
+ '-67,1889','-67,1887','-66,1887','-73,1875','-72,1875','-83,1880','-118,1853','-168,1918',
+ '-115,1930','-115,1929','-204,1928','-200,1938','-199,1938','-203,1939','-211,1940','-81,1955',
+ '-67,1985','-66,1985','-69,1984','-58,1994','-57,1994','-56,1993','-53,1994','-50,1994',
+ '-49,1993','-47,1993','-59,2034','-58,2034','-66,2043','-64,2044','-67,2061','-123,2083'
+]);
 let wcLegalCache=new Map(),wcShapeCache=null,wcCityCache=null,wcOccupationPolygons=null,wcCellSamplesCache=new Map(),wcUkraineSamplesCache=new Map(),wcFineCellSamplesCache=new Map(),wcFineUkraineSamplesCache=new Map();
 function wcPoint(key){let [q,r]=key.split(',').map(Number);return[WC_WIDTH*(q+r/2),WC_HEIGHT*r];}
 function wcKey(lon,lat){let rf=lat/WC_HEIGHT,qf=lon/WC_WIDTH-rf/2,sf=-qf-rf,q=Math.round(qf),r=Math.round(rf),s=Math.round(sf),dq=Math.abs(q-qf),dr=Math.abs(r-rf),ds=Math.abs(s-sf);if(dq>dr&&dq>ds)q=-r-s;else if(dr>ds)r=-q-s;return q+','+r;}
@@ -31,7 +38,7 @@ function wcBase(key,w){
  let geographic=wcLegal(key,w),title=state.titles?.[key],independent=!title&&typeof resIndependentOwner==='function'?resIndependentOwner(key):null,c=title||independent||geographic;if(!c)return null;
  if(!title&&!independent&&state.countries[geographic]?.exile?.occupier)return wcRoot(state.countries[geographic].exile.occupier);
  let owner=wcRoot(c);if(owner!==c)return owner;
- if(c==='UA'&&state.mode==='control'&&occupationData&&wcOccupiedCell(key))return'RU';return c;
+ if(c==='UA'&&state.mode==='control'&&WC_SCENARIO_RUSSIAN_CONTROL_CELLS.has(key))return'RU';if(c==='UA'&&state.mode==='control'&&occupationData&&wcOccupiedCell(key))return'RU';return c;
 }
 function wcOwner(key,w){return wcRoot(state.control?.[key]||wcBase(key,w));}
 function wcCellSamples(key){
@@ -94,7 +101,7 @@ function wcSeed(w){
    for(let key of seen)if(wcLegal(key,w)===country)state.control[key]=country;
   }
  }
- let keys=wcBoundaryKeys(world[w.a].feature,world[w.b].feature);if(w.scenario)for(let k of wcBoundaryKeys(occupationData))keys.add(k);for(let k of new Set([...Object.keys(state.control),...Object.keys(state.titles||{})]))if([w.a,w.b].includes(wcOwner(k,w)))keys.add(k);
+ let keys=wcBoundaryKeys(world[w.a].feature,world[w.b].feature);if(w.scenario){for(let k of wcBoundaryKeys(occupationData))keys.add(k);for(let k of WC_SCENARIO_RUSSIAN_CONTROL_CELLS)keys.add(k);for(let k of WC_LEGAL_RUSSIAN_CELLS)keys.add(k);}for(let k of new Set([...Object.keys(state.control),...Object.keys(state.titles||{})]))if([w.a,w.b].includes(wcOwner(k,w)))keys.add(k);
  let band=new Set(keys);for(let k of keys)for(let n of wcNeighbors(k))band.add(n);w.frontier=[...band].filter(k=>wcOpposing(k,w));if(!w.frontier.length&&!w.scenario)wcLanding(w);
 }
 function wcLanding(w){
@@ -222,6 +229,7 @@ function wcScenarioGrid(){
   let minQ=Math.floor(bounds[0]/WC_WIDTH-r/2)-1,maxQ=Math.ceil(bounds[2]/WC_WIDTH-r/2)+1;
   for(let q=minQ;q<=maxQ;q++){let key=q+','+r;if(wcLegal(key,{a:'UA',b:'RU'})==='UA'&&wcOccupiedCell(key))keys.add(key);}
  }
+ if(state.mode==='control')for(let key of WC_SCENARIO_RUSSIAN_CONTROL_CELLS)if(wcLegal(key,{a:'UA',b:'RU'})==='UA')keys.add(key);
  return wcScenarioGridCache={keys,loops:wcGridOutline(keys)};
 }
 function wcOccupationColor(owner){
