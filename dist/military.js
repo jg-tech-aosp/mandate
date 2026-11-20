@@ -290,9 +290,21 @@ function milPanel(n){
  html+=wars.length?'<h3>Active campaigns</h3>'+wars.map(w=>wcCard(w)).join(''):'<p class="note">No active fronts.</p>';return html;
 }
 function milCanInspectFullRoster(n){let viewer=state?.countries?.[state.player];return n.code===state.player||!!(viewer&&(n.allies?.includes(state.player)||viewer.allies?.includes(n.code)));}
+let milFrontProximityCache=new WeakMap();
+function milFrontCellsWithin(w,range=2){
+ const frontier=w.frontier||[],cached=milFrontProximityCache.get(w);
+ if(cached&&cached.frontier===frontier&&cached.range===range)return cached.cells;
+ const cells=new Set(frontier);let ring=new Set(frontier);
+ for(let step=0;step<range;step++){
+  const next=new Set();
+  for(let key of ring)for(let neighbor of wcNeighbors(key))if(!cells.has(neighbor)){cells.add(neighbor);next.add(neighbor)}
+  ring=next;
+ }
+ milFrontProximityCache.set(w,{frontier,range,cells});return cells;
+}
 function milVisibleFrontDivisions(n){
- let fronts=(state.wars||[]).filter(w=>w.active&&[w.a,w.b].includes(n.code)&&[w.a,w.b].includes(state.player)),seen=new Set();
- for(let w of fronts)for(let{division:d}of milDivisionEntries(n))if(d.deployment===w.id&&d.arrivalTurn<=state.turn&&milAtFront(d,w,2))seen.add(d);
+ const fronts=(state.wars||[]).filter(w=>w.active&&[w.a,w.b].includes(n.code)&&[w.a,w.b].includes(state.player)),entries=milDivisionEntries(n),seen=new Set();
+ for(let w of fronts){const nearFront=milFrontCellsWithin(w,2);for(let{division:d}of entries)if(d.deployment===w.id&&d.arrivalTurn<=state.turn&&nearFront.has(d.location))seen.add(d)}
  return seen;
 }
 function milInspector(n){
